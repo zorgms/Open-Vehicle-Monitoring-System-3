@@ -58,7 +58,7 @@ void powermgmt::WebCleanup()
   {
   std::string error;
   bool enabled;
-  std::string modemoff_delay, wifioff_delay, b12v_shutdown_delay;
+  std::string modemoff_delay, wifioff_delay, b12v_shutdown_delay, b12v_ref_volt, b12v_alert_volt;
 
   if (c.method == "POST")
     {
@@ -69,6 +69,8 @@ void powermgmt::WebCleanup()
 #endif
     wifioff_delay = c.getvar("wifioff_delay");
     b12v_shutdown_delay = c.getvar("12v_shutdown_delay");
+    b12v_ref_volt = c.getvar("12v.ref");
+    b12v_alert_volt = c.getvar("12v.alert");
 
     // check values
     if (!modemoff_delay.empty()) 
@@ -83,7 +85,6 @@ void powermgmt::WebCleanup()
         error += "<li data-input=\"user_key\">Invalid shutdown delay!</li>";
       }
 
-
     if (error == "")
       {
       // store:
@@ -93,6 +94,8 @@ void powermgmt::WebCleanup()
 #endif
       MyConfig.SetParamValue("power", "wifioff_delay", wifioff_delay);
       MyConfig.SetParamValue("power", "12v_shutdown_delay", b12v_shutdown_delay);
+      MyConfig.SetParamValue("vehicle", "12v.ref", b12v_ref_volt);
+      MyConfig.SetParamValue("vehicle", "12v.alert", b12v_alert_volt);
 
       c.head(200);
       c.alert("success", "<p class=\"lead\">Power management configuration saved.</p>");
@@ -115,6 +118,8 @@ void powermgmt::WebCleanup()
 #endif
     wifioff_delay = MyConfig.GetParamValue("power", "wifioff_delay", STR(POWERMGMT_WIFIOFF_DELAY)); 
     b12v_shutdown_delay = MyConfig.GetParamValue("power", "12v_shutdown_delay", STR(POWERMGMT_12V_SHUTDOWN_DELAY)); 
+    b12v_ref_volt = MyConfig.GetParamValue("vehicle", "12v.ref", "12.6"); 
+    b12v_alert_volt = MyConfig.GetParamValue("vehicle", "12v.alert", "1.6");
 
     c.head(200);
     }
@@ -147,6 +152,16 @@ void powermgmt::WebCleanup()
     "<p>If 12V battery is depleted under certain threshold, an alarm is set. OVMS waits this time period during which user can begin charging the batteries. "
     "If this period is exceeded without canceled alarm, OVMS will be shut down to prevent further battery depletion.</p>",
     "min=\"1\" step=\"1\"", "minutes");
+
+  c.input("number", "12V Ref. Voltage", "12v.ref", b12v_ref_volt.c_str(), 
+    "Default: 12.6 Volt",
+    "<p>12V Reference Voltage.</p>",
+    "min=\"0.1\" step=\"0.1\"", "Volt");
+
+  c.input("number", "12V Alert Voltage", "12v.alert", b12v_alert_volt.c_str(), 
+    "Default: 1.6 Volt",
+    "<p>The Battery alert threshold. When 12V Voltage below 12V Ref. minus 12V Alert Voltage.</p>",
+    "min=\"0.1\" step=\"0.1\"", "Volt");
 
   c.print("<hr>");
   c.input_button("default", "Save");
