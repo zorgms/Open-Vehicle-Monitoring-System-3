@@ -957,6 +957,7 @@ OvmsVehicle::OvmsVehicle()
 
   m_poll_state = 0;
   m_poll_bus = NULL;
+  m_poll_bus_default = NULL;
   m_poll_plist = NULL;
   m_poll_plcur = NULL;
   m_poll_ticker = 0;
@@ -2020,6 +2021,7 @@ void OvmsVehicle::PollSetPidList(canbus* bus, const poll_pid_t* plist)
   {
   OvmsRecMutexLock lock(&m_poll_mutex);
   m_poll_bus = bus;
+  m_poll_bus_default = bus;
   m_poll_plist = plist;
   m_poll_ticker = 0;
   m_poll_sequence_cnt = 0;
@@ -2064,7 +2066,7 @@ void OvmsVehicle::PollerSend(bool fromTicker)
   OvmsRecMutexLock lock(&m_poll_mutex);
 
   // Don't do anything with no bus, no list or an empty list
-  if (!m_poll_bus || !m_poll_plist || m_poll_plist->txmoduleid == 0) return;
+  if (!m_poll_bus_default || !m_poll_plist || m_poll_plist->txmoduleid == 0) return;
 
   if (m_poll_plcur == NULL) m_poll_plcur = m_poll_plist;
 
@@ -2072,7 +2074,7 @@ void OvmsVehicle::PollerSend(bool fromTicker)
   //          fromTicker, m_poll_plcur->type, m_poll_plcur->pid,
   //          m_poll_ticker, m_poll_wait, m_poll_sequence_cnt, m_poll_sequence_max);
 
-  if (fromTicker) 
+  if (fromTicker)
     {
     // Timer ticker call: reset throttling counter, check response timeout
     m_poll_sequence_cnt = 0;
@@ -2103,16 +2105,35 @@ void OvmsVehicle::PollerSend(bool fromTicker)
         m_poll_moduleid_high = 0x7ef;
         }
 
-      ESP_LOGD(TAG, "PollerSend(%d): send [type=%02X, pid=%X], expecting %03x/%03x-%03x",
-               fromTicker, m_poll_type, m_poll_pid, m_poll_moduleid_sent, m_poll_moduleid_low, m_poll_moduleid_high);
-      
+      switch (m_poll_plcur->pollbus)
+        {
+        case 1:
+          m_poll_bus = m_can1;
+          break;
+        case 2:
+          m_poll_bus = m_can2;
+          break;
+        case 3:
+          m_poll_bus = m_can3;
+          break;
+        case 4:
+          m_poll_bus = m_can4;
+          break;
+        default:
+          m_poll_bus = m_poll_bus_default;
+        }
+
+      ESP_LOGD(TAG, "PollerSend(%d): send [bus=%d, type=%02X, pid=%X], expecting %03x/%03x-%03x",
+               fromTicker, m_poll_plcur->pollbus, m_poll_type, m_poll_pid, m_poll_moduleid_sent,
+               m_poll_moduleid_low, m_poll_moduleid_high);
+
       CAN_frame_t txframe;
       memset(&txframe,0,sizeof(txframe));
       txframe.origin = m_poll_bus;
       txframe.MsgID = m_poll_moduleid_sent;
       txframe.FIR.B.FF = CAN_frame_std;
       txframe.FIR.B.DLC = 8;
-      
+
       switch (m_poll_plcur->type)
         {
         // 16 bit PID requests:
@@ -2130,7 +2151,7 @@ void OvmsVehicle::PollerSend(bool fromTicker)
           txframe.data.u8[2] = m_poll_pid;
           break;
         }
-      
+
       m_poll_bus->Write(&txframe);
       m_poll_ml_frame = 0;
       m_poll_ml_offset = 0;
