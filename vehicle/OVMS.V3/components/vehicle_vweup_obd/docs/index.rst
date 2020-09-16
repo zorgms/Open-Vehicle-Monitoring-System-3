@@ -1,6 +1,6 @@
-===========
-VW e-Up OBD
-===========
+=============
+VW e-Up (OBD)
+=============
 
 Vehicle Type: **VWUP.OBD**
 
@@ -57,6 +57,8 @@ The car is off: It hasn't drawn (or charged) any current into the main battery f
 Supported Standard Metrics
 --------------------------
 
+**Metrics updated in state "Vehicle ON" or "Vehicle CHARGING"**
+
 ======================================== ======================== ============================================
 Metric name                              Example value            Description
 ======================================== ======================== ============================================
@@ -66,12 +68,23 @@ v.b.12v.voltage                          12.9 V                   Current voltag
 v.b.voltage                              320.2 V                  Current voltage of the main battery
 v.b.current                              -23.2 A                  Current current into (positive) or out of (negative) the main battery
 v.b.power                                -23.234 kW               Current power into (positive) or out of (negative) the main battery.
+v.b.energy.used.total                    540.342 kWh              Energy used total (life time) of the main battery
+v.b.energy.recd.total                    578.323 kWh              Energy recovered total (life time) of the main battery (charging and recuperation)
 v.b.soc                                  88.2 %                   Current State of Charge (SoC) of the main battery
 v.b.temp                                 22.5 °C                  Current temperature of the main battery
 v.p.odometer                             2340 km                  Total distance traveled
 ======================================== ======================== ============================================
 
 Note: In state "Vehicle OFF" only *v.b.12v.voltage* is updated.
+
+**Metrics updated in state "Vehicle CHARGING"**
+
+======================================== ======================== ============================================
+Metric name                              Example value            Description
+======================================== ======================== ============================================
+v.c.power                                7.345 kW                 Input power of charger
+v.c.efficiency                           91.3 %                   Charging efficiency calculated by v.b.power and v.c.power
+======================================== ======================== ============================================
 
 --------------
 Custom Metrics
@@ -84,8 +97,6 @@ In addition to the standard metrics above the following custom metrics are read 
 ======================================== ======================== ============================================
 Metric name                              Example value            Description
 ======================================== ======================== ============================================
-xuo.b.energy.used                        -540.342 kWh             Total energy taken out of the main battery
-xuo.b.energy.charged                     578.323 kWh              Total energy put (by charging or recuperation) into the main battery
 xuo.b.cell.delta                         0.012 V                  Delta voltage between lowest and highest cell voltage
 ======================================== ======================== ============================================
 
@@ -135,12 +146,12 @@ This page plugin content shows the metrics in a compact form which can be displa
         </div>
        </div>
        <div class="clearfix">
-        <div class="metric number" data-metric="vwup.batmgmt.enrg.used" data-prec="3">
+        <div class="metric number" data-metric="v.b.energy.used.total" data-prec="3">
          <span class="label">TOTALS:&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbspDischarged</span>
          <span class="value">?</span>
          <span class="unit">kWh</span>
         </div>
-        <div class="metric number" data-metric="vwup.batmgmt.enrg.chrgd" data-prec="3">
+        <div class="metric number" data-metric="v.b.energy.recd.total" data-prec="3">
          <span class="label">Charged</span>
          <span class="value">?</span>
          <span class="unit">kWh</span>
@@ -192,7 +203,7 @@ This page plugin content shows the metrics in a compact form which can be displa
          <span class="value">?</span>
          <span class="unit">°C</span>
         </div>
-        <div class="metric number" data-metric="vwup.batmgmt.cell.delta" data-prec="3">
+        <div class="metric number" data-metric="xuo.b.cell.delta" data-prec="3">
          <span class="label">Cell delta</span>
          <span class="value">?</span>
          <span class="unit">V</span>
@@ -202,7 +213,7 @@ This page plugin content shows the metrics in a compact form which can be displa
        <h4>Charger</h4>
     
        <div class="clearfix">
-        <div class="metric progress" data-metric="vwup.chrgr.ac.p" data-prec="0">
+        <div class="metric progress" data-metric="xuo.c.ac.p" data-prec="0">
          <div class="progress-bar progress-bar-warning value-low text-left" role="progressbar"
           aria-valuenow="0" aria-valuemin="0" aria-valuemax="8000" style="width:0%">
           <div>
@@ -212,7 +223,7 @@ This page plugin content shows the metrics in a compact form which can be displa
           </div>
          </div>
         </div>
-        <div class="metric progress" data-metric="vwup.chrgr.dc.p" data-prec="0">
+        <div class="metric progress" data-metric="xuo.c.dc.p" data-prec="0">
          <div class="progress-bar progress-bar-warning value-low text-left" role="progressbar"
           aria-valuenow="0" aria-valuemin="0" aria-valuemax="8000" style="width:0%">
           <div>
@@ -224,22 +235,22 @@ This page plugin content shows the metrics in a compact form which can be displa
         </div>
        </div>   
        <div class="clearfix">
-        <div class="metric number" data-metric="vwup.chrgr.eff.calc" data-prec="1">
+        <div class="metric number" data-metric="xuo.c.eff.calc" data-prec="1">
          <span class="label">Efficiency (calc)</span>
          <span class="value">?</span>
          <span class="unit">%</span>
         </div>
-        <div class="metric number" data-metric="vwup.chrgr.eff.ecu" data-prec="1">
+        <div class="metric number" data-metric="xuo.c.eff.ecu" data-prec="1">
          <span class="label">Efficiency (ECU)</span>
          <span class="value">?</span>
          <span class="unit">%</span>
         </div>
-        <div class="metric number" data-metric="vwup.chrgr.loss.calc" data-prec="0">
+        <div class="metric number" data-metric="xuo.c.loss.calc" data-prec="0">
          <span class="label">Loss (calc)</span>
          <span class="value">?</span>
          <span class="unit">W</span>
         </div>
-        <div class="metric number" data-metric="vwup.chrgr.loss.ecu" data-prec="0">
+        <div class="metric number" data-metric="xuo.c.loss.ecu" data-prec="0">
          <span class="label">Loss (ECU)</span>
          <span class="value">?</span>
          <span class="unit">W</span>
