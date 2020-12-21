@@ -71,6 +71,8 @@ const OvmsVehicle::poll_pid_t twizy_poll_default[] = {
 
 void OvmsVehicleRenaultTwizy::ObdInit()
 {
+  ESP_LOGI(TAG, "obd subsystem init");
+
   // init poller:
   PollSetPidList(m_can1, twizy_poll_default);
   PollSetState(0);
@@ -111,6 +113,18 @@ void OvmsVehicleRenaultTwizy::ObdInit()
   twizy_cluster_dtc_updated = true;
   twizy_cluster_dtc_inhibit_alert = false;
 #endif
+}
+
+
+void OvmsVehicleRenaultTwizy::ObdShutdown()
+{
+  ESP_LOGI(TAG, "obd subsystem shutdown");
+
+  cmd_xrt->UnregisterCommand("obd");
+
+  twizy_obd_rxwait.Take(portMAX_DELAY);
+  PollSetPidList(m_can1, NULL);
+  twizy_obd_rxwait.Give();
 }
 
 
@@ -232,18 +246,18 @@ int OvmsVehicleRenaultTwizy::ObdRequest(uint16_t txid, uint16_t rxid, string req
   if (POLL_TYPE_HAS_16BIT_PID(poll[0].type)) {
     assert(request.size() >= 3);
     poll[0].args.pid = request[1] << 8 | request[2];
-    poll[0].args.datalen = LIMIT_MAX(request.size()-3, sizeof(poll[0].args.datalen));
+    poll[0].args.datalen = LIMIT_MAX(request.size()-3, sizeof(poll[0].args.data));
     memcpy(poll[0].args.data, request.data()+3, poll[0].args.datalen);
   }
   else if (POLL_TYPE_HAS_8BIT_PID(poll[0].type)) {
     assert(request.size() >= 2);
     poll[0].args.pid = request.at(1);
-    poll[0].args.datalen = LIMIT_MAX(request.size()-2, sizeof(poll[0].args.datalen));
+    poll[0].args.datalen = LIMIT_MAX(request.size()-2, sizeof(poll[0].args.data));
     memcpy(poll[0].args.data, request.data()+2, poll[0].args.datalen);
   }
   else {
     poll[0].args.pid = 0;
-    poll[0].args.datalen = LIMIT_MAX(request.size()-1, sizeof(poll[0].args.datalen));
+    poll[0].args.datalen = LIMIT_MAX(request.size()-1, sizeof(poll[0].args.data));
     memcpy(poll[0].args.data, request.data()+1, poll[0].args.datalen);
   }
 
