@@ -78,7 +78,7 @@ OvmsVehicleFactory::OvmsVehicleFactory()
   cmd_vehicle->RegisterCommand("status","Show vehicle module status",vehicle_status);
 
   MyCommandApp.RegisterCommand("wakeup","Wake up vehicle",vehicle_wakeup);
-  MyCommandApp.RegisterCommand("homelink","Activate specified homelink button",vehicle_homelink,"<homelink> [<duration=100ms>]",1,2);
+  MyCommandApp.RegisterCommand("homelink","Activate specified homelink button",vehicle_homelink,"<homelink> [<duration=1000ms>]",1,2);
   OvmsCommand* cmd_climate = MyCommandApp.RegisterCommand("climatecontrol","(De)Activate Climate Control");
   cmd_climate->RegisterCommand("on","Activate Climate Control",vehicle_climatecontrol_on);
   cmd_climate->RegisterCommand("off","Deactivate Climate Control",vehicle_climatecontrol_off);
@@ -104,6 +104,34 @@ OvmsVehicleFactory::OvmsVehicleFactory()
   cmd_bms->RegisterCommand("status","Show BMS status",bms_status);
   cmd_bms->RegisterCommand("reset","Reset BMS statistics",bms_reset);
   cmd_bms->RegisterCommand("alerts","Show BMS alerts",bms_alerts);
+
+  OvmsCommand* cmd_obdii = MyCommandApp.RegisterCommand("obdii", "OBDII framework");
+  for (int k=1; k <= 4; k++)
+    {
+    static const char* name[4] = { "can1", "can2", "can3", "can4" };
+    OvmsCommand* cmd_canx = cmd_obdii->RegisterCommand(name[k-1], "select bus");
+
+    OvmsCommand* cmd_obdreq = cmd_canx->RegisterCommand(
+      "request", "Send OBD2/UDS request, output response");
+    cmd_obdreq->RegisterCommand(
+      "device", "Send OBD2/ISOTP request to a device", obdii_request,
+      "[-e] [-t<timeout_ms>] <txid> <rxid> <request>\n"
+      "Give <txid> and <rxid> as hexadecimal CAN IDs,"
+      " add -e to use ISO-TP extended addressing (19 bit IDs).\n"
+      "<request> is the hex string of the request type + arguments,"
+      " e.g. '223a4b' = read data from PID 0x3a4b.\n"
+      "Default timeout is 3000 ms.",
+      3, 5);
+    cmd_obdreq->RegisterCommand(
+      "broadcast", "Send OBD2/UDS request as broadcast", obdii_request,
+      "[-t<timeout_ms>] <request>\n"
+      "Sends the request to broadcast ID 7df, listens on IDs 7e8-7ef.\n"
+      "Note: only the first response will be shown, enable CAN log to check for more.\n"
+      "<request> is the hex string of the request type + arguments,"
+      " e.g. '223a4b' = read data from PID 0x3a4b.\n"
+      "Default timeout is 3000 ms.",
+      1, 2);
+    }
 
 #ifdef CONFIG_OVMS_SC_JAVASCRIPT_DUKTAPE
   DuktapeObjectRegistration* dto = new DuktapeObjectRegistration("OvmsVehicle");
@@ -236,6 +264,8 @@ OvmsVehicle::OvmsVehicle()
   m_poll_plist = NULL;
   m_poll_plcur = NULL;
   m_poll_ticker = 0;
+  m_poll_single_rxbuf = NULL;
+  m_poll_single_rxerr = 0;
   m_poll_moduleid_sent = 0;
   m_poll_moduleid_low = 0;
   m_poll_moduleid_high = 0;
@@ -393,6 +423,11 @@ const char* OvmsVehicle::VehicleShortName()
   return MyVehicleFactory.ActiveVehicleName();
   }
 
+const char* OvmsVehicle::VehicleType()
+  {
+  return MyVehicleFactory.ActiveVehicleType();
+  }
+
 void OvmsVehicle::RxTask()
   {
   CAN_frame_t frame;
@@ -444,7 +479,7 @@ void OvmsVehicle::IncomingFrameCan4(CAN_frame_t* p_frame)
 
 void OvmsVehicle::Status(int verbosity, OvmsWriter* writer)
   {
-  writer->printf("Vehicle module %s loaded and running\n", VehicleShortName());
+  writer->printf("Vehicle module '%s' (code %s) loaded and running\n", VehicleShortName(), VehicleType());
   }
 
 void OvmsVehicle::RegisterCanBus(int bus, CAN_mode_t mode, CAN_speed_t speed, dbcfile* dbcfile)
@@ -744,7 +779,8 @@ void OvmsVehicle::CalculateEfficiency()
   float consumption = 0;
   if (StdMetrics.ms_v_pos_speed->AsFloat() >= 5)
     consumption = StdMetrics.ms_v_bat_power->AsFloat(0, Watts) / StdMetrics.ms_v_pos_speed->AsFloat();
-  StdMetrics.ms_v_bat_consumption->SetValue((StdMetrics.ms_v_bat_consumption->AsFloat() * 4 + consumption) / 5);
+  StdMetrics.ms_v_bat_consumption->SetValue(
+    TRUNCPREC((StdMetrics.ms_v_bat_consumption->AsFloat() * 4 + consumption) / 5, 1));
   }
 
 OvmsVehicle::vehicle_command_t OvmsVehicle::CommandSetChargeMode(vehicle_mode_t mode)
@@ -1119,15 +1155,17 @@ void OvmsVehicle::MetricModified(OvmsMetric* metric)
     }
   else if (metric == StandardMetrics.ms_v_charge_mode)
     {
-    const char* m = metric->AsString().c_str();
-    MyEvents.SignalEvent("vehicle.charge.mode",(void*)m, strlen(m)+1);
-    NotifiedVehicleChargeMode(m);
+    std::string m = metric->AsString();
+    const char* mc = m.c_str();
+    MyEvents.SignalEvent("vehicle.charge.mode",(void*)mc, strlen(mc)+1);
+    NotifiedVehicleChargeMode(mc);
     }
   else if (metric == StandardMetrics.ms_v_charge_state)
     {
-    const char* m = metric->AsString().c_str();
-    MyEvents.SignalEvent("vehicle.charge.state",(void*)m, strlen(m)+1);
-    if (strcmp(m,"done")==0)
+    std::string m = metric->AsString();
+    const char* mc = m.c_str();
+    MyEvents.SignalEvent("vehicle.charge.state",(void*)mc, strlen(mc)+1);
+    if (m == "done")
       {
       StandardMetrics.ms_v_charge_duration_full->SetValue(0);
       StandardMetrics.ms_v_charge_duration_range->SetValue(0);
@@ -1135,11 +1173,11 @@ void OvmsVehicle::MetricModified(OvmsMetric* metric)
       }
     if (m_autonotifications)
       {
-      m_chargestate_ticker = GetNotifyChargeStateDelay(m);
+      m_chargestate_ticker = GetNotifyChargeStateDelay(mc);
       if (m_chargestate_ticker == 0)
         NotifyChargeState();
       }
-    NotifiedVehicleChargeState(m);
+    NotifiedVehicleChargeState(mc);
     }
   else if (metric == StandardMetrics.ms_v_pos_acceleration)
     {
@@ -1265,16 +1303,16 @@ bool OvmsVehicle::SetBrakelight(int on)
 
 void OvmsVehicle::NotifyChargeState()
   {
-  const char* m = StandardMetrics.ms_v_charge_state->AsString().c_str();
-  if (strcmp(m,"done")==0)
+  std::string m = StandardMetrics.ms_v_charge_state->AsString();
+  if (m == "done")
     NotifyChargeDone();
-  else if (strcmp(m,"stopped")==0)
+  else if (m == "stopped")
     NotifyChargeStopped();
-  else if (strcmp(m,"charging")==0)
+  else if (m == "charging")
     NotifyChargeStart();
-  else if (strcmp(m,"topoff")==0)
+  else if (m == "topoff")
     NotifyChargeStart();
-  else if (strcmp(m,"heating")==0)
+  else if (m == "heating")
     NotifyHeatingStart();
   }
 
