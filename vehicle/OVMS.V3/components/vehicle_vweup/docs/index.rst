@@ -36,6 +36,8 @@ If both connections are to be made simultaneously, an adapter cable has to be ma
 .. image:: DSC00373_1024.JPG
     :width: 480px
 
+The cable used between the OBD plug and the DB9-F plug needs to be twisted to avoid transmission problems. A good cable to use here is a CAT-5 or CAT-6 double shielded network cable. Be shure to not only connect CAN hi and CAN lo, but also connect ground.
+
 === === ===== ===========================
 T26 OBD DB9-F Signal
 === === ===== ===========================
@@ -207,7 +209,7 @@ xvu.m.soc.norm                OBD        80.5 %                   Current normal
 Example Code for Web Plugin with some custom metrics:
 -----------------------------------------------------
 
-.. code-block::
+.. code-block:: html
 
   <div class="panel panel-primary">
    <div class="panel-heading">Custom Metrics</div>

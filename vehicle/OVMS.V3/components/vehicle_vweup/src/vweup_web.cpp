@@ -255,31 +255,15 @@ void OvmsVehicleVWeUp::WebCfgClimate(PageEntry_t &p, PageContext_t &c)
   c.form_start(p.uri);
 
   c.print(
-    "<p>This page offers remote climate configuration.</p>"
-    "<p>The target temperature for the cabin can be set here (15 to 30 degrees Celcius).</p>");
+    "<p>This page offers remote climate configuration.</p><br>"
+    "<p>The target temperature for the cabin can be set here (15 to 30 &#8451;).</p><br>");
 
   c.fieldset_start("Climate control");
 
-  c.input_select_start("Cabin target temperature", "cc_temp");
-
-  c.input_select_option("15", "15", cc_temp == "15");
-  c.input_select_option("16", "16", cc_temp == "16");
-  c.input_select_option("17", "17", cc_temp == "17");
-  c.input_select_option("18", "18", cc_temp == "18");
-  c.input_select_option("19", "19", cc_temp == "19");
-  c.input_select_option("20", "20", cc_temp == "20");
-  c.input_select_option("21", "21", cc_temp == "21");
-  c.input_select_option("22", "22", cc_temp == "22");
-  c.input_select_option("23", "23", cc_temp == "23");
-  c.input_select_option("24", "24", cc_temp == "24");
-  c.input_select_option("25", "25", cc_temp == "25");
-  c.input_select_option("26", "26", cc_temp == "26");
-  c.input_select_option("27", "27", cc_temp == "27");
-  c.input_select_option("28", "28", cc_temp == "28");
-  c.input_select_option("29", "29", cc_temp == "29");
-  c.input_select_option("30", "30", cc_temp == "30");
-  c.input_select_end(
-    "<p>This parameter can also be set in the app under FEATURES 21.</p>");
+  c.input_slider("Cabin target temperature", "cc_temp", 3, "&#8451;",
+    -1, cc_temp.empty() ? 22 : atof(cc_temp.c_str()),
+    22, 15, 30, 1,
+    "<p>Default 22 &#8451;, 15=Lo, 30=Hi.</p><br><p>This parameter can also be set in the app under FEATURES 21.</p>");
 
   c.input_button("default", "Save");
   c.form_end();
@@ -298,6 +282,22 @@ void OvmsVehicleVWeUp::WebDispChgMetrics(PageEntry_t &p, PageContext_t &c)
   PAGE_HOOK("body.pre");
 
   c.print(
+    "<style>\n"
+    ".wide-metrics .metric.number .label, .wide-metrics .metric.text .label {\n"
+      "min-width: 12em;\n"
+    "}\n"
+    ".wide-metrics .metric.number .value {\n"
+      "min-width: 6em;\n"
+    "}\n"
+    "h6.metric-head {\n"
+      "margin-bottom: 0;\n"
+      "color: #676767;\n"
+      "font-size: 15px;\n"
+    "}\n"
+    ".night h6.metric-head {\n"
+      "color: unset;\n"
+    "}\n"
+    "</style>\n"
     "<div class=\"panel panel-primary\">"
       "<div class=\"panel-heading\">VW e-Up Charging Metrics</div>"
       "<div class=\"panel-body\">"
@@ -326,8 +326,32 @@ void OvmsVehicleVWeUp::WebDispChgMetrics(PageEntry_t &p, PageContext_t &c)
             "</div>"
           "</div>"
           "<div class=\"clearfix\">"
+            "<h6 class=\"metric-head\">Current Status:</h6>"
+            "<div class=\"metric number\" data-metric=\"v.b.range.est\" data-prec=\"0\">"
+              "<span class=\"label\">Range</span>"
+              "<span class=\"value\">?</span>"
+              "<span class=\"unit\">km</span>"
+            "</div>"
+            "<div class=\"metric number\" data-metric=\"v.c.kwh\" data-prec=\"2\">"
+              "<span class=\"label\">Charged</span>"
+              "<span class=\"value\">?</span>"
+              "<span class=\"unit\">kWh</span>"
+            "</div>"
+            "<div class=\"metric number\" data-metric=\"v.b.cac\" data-prec=\"2\">"
+              "<span class=\"label\">Capacity</span>"
+              "<span class=\"value\">?</span>"
+              "<span class=\"unit\">Ah</span>"
+            "</div>"
+            "<div class=\"metric number\" data-metric=\"v.b.soh\" data-prec=\"2\">"
+              "<span class=\"label\">SOH</span>"
+              "<span class=\"value\">?</span>"
+              "<span class=\"unit\">%</span>"
+            "</div>"
+          "</div>"
+          "<div class=\"clearfix\">"
+            "<h6 class=\"metric-head\">Totals:</h6>"
             "<div class=\"metric number\" data-metric=\"v.b.energy.used.total\" data-prec=\"2\">"
-              "<span class=\"label\">TOTALS:&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbspUsed</span>"
+              "<span class=\"label\">Used</span>"
               "<span class=\"value\">?</span>"
               "<span class=\"unit\">kWh</span>"
             "</div>"
@@ -336,13 +360,18 @@ void OvmsVehicleVWeUp::WebDispChgMetrics(PageEntry_t &p, PageContext_t &c)
               "<span class=\"value\">?</span>"
               "<span class=\"unit\">kWh</span>"
             "</div>"
+            "<div class=\"metric number\" data-metric=\"v.b.coulomb.used.total\" data-prec=\"2\">"
+              "<span class=\"label\">Used</span>"
+              "<span class=\"value\">?</span>"
+              "<span class=\"unit\">Ah</span>"
+            "</div>"
+            "<div class=\"metric number\" data-metric=\"v.b.coulomb.recd.total\" data-prec=\"2\">"
+              "<span class=\"label\">Charged</span>"
+              "<span class=\"value\">?</span>"
+              "<span class=\"unit\">Ah</span>"
+            "</div>"
             "<div class=\"metric number\" data-metric=\"v.p.odometer\" data-prec=\"0\">"
               "<span class=\"label\">Odometer</span>"
-              "<span class=\"value\">?</span>"
-              "<span class=\"unit\">km</span>"
-            "</div>"
-            "<div class=\"metric number\" data-metric=\"v.b.range.est\" data-prec=\"0\">"
-              "<span class=\"label\">Range</span>"
               "<span class=\"value\">?</span>"
               "<span class=\"unit\">km</span>"
             "</div>"
@@ -470,7 +499,7 @@ void OvmsVehicleVWeUp::WebDispChgMetrics(PageEntry_t &p, PageContext_t &c)
             "</div>"
           "</div>"
 
-          "<div class=\"clearfix\">"
+          "<div class=\"clearfix wide-metrics\">"
             "<div class=\"metric number\" data-metric=\"v.c.temp\" data-prec=\"1\">"
               "<span class=\"label\">Temp</span>"
               "<span class=\"value\">?</span>"

@@ -72,7 +72,7 @@
 #include <string>
 static const char *TAG = "v-vweup";
 
-#define VERSION "0.5.1"
+#define VERSION "0.8.1"
 
 #include <stdio.h>
 #include <string>
@@ -130,6 +130,15 @@ OvmsVehicleVWeUp *OvmsVehicleVWeUp::GetInstance(OvmsWriter *writer)
 OvmsVehicleVWeUp::OvmsVehicleVWeUp()
 {
   ESP_LOGI(TAG, "Start VW e-Up vehicle module");
+
+  // Init general state:
+  vweup_enable_write = false;
+  vweup_enable_obd = false;
+  vweup_enable_t26 = false;
+  vweup_con = 0;
+  vweup_modelyear = 0;
+
+  m_obd_state = OBDS_Init;
 
   // Init metrics:
   m_version = MyMetrics.InitString("xvu.m.version", 0, VERSION " " __DATE__ " " __TIME__);
@@ -243,7 +252,7 @@ void OvmsVehicleVWeUp::ConfigChanged(OvmsConfigParam *param)
   ESP_LOGD(TAG, "VW e-Up reload configuration");
   int vweup_modelyear_new = MyConfig.GetParamValueInt("xvu", "modelyear", DEFAULT_MODEL_YEAR);
   bool vweup_enable_obd_new = MyConfig.GetParamValueBool("xvu", "con_obd", true);
-  vweup_enable_t26 = MyConfig.GetParamValueBool("xvu", "con_t26", true);
+  bool vweup_enable_t26_new = MyConfig.GetParamValueBool("xvu", "con_t26", true);
   vweup_enable_write = MyConfig.GetParamValueBool("xvu", "canwrite", false);
   vweup_cc_temp_int = MyConfig.GetParamValueInt("xvu", "cc_temp", 22);
   int cell_interval_drv = MyConfig.GetParamValueInt("xvu", "cell_interval_drv", 15);
@@ -251,6 +260,7 @@ void OvmsVehicleVWeUp::ConfigChanged(OvmsConfigParam *param)
 
   bool do_obd_init = (
     (!vweup_enable_obd && vweup_enable_obd_new) ||
+    (vweup_enable_t26_new != vweup_enable_t26) ||
     (vweup_modelyear < 2020 && vweup_modelyear_new > 2019) ||
     (vweup_modelyear_new < 2020 && vweup_modelyear > 2019) ||
     (cell_interval_drv != m_cfg_cell_interval_drv) ||
@@ -258,6 +268,7 @@ void OvmsVehicleVWeUp::ConfigChanged(OvmsConfigParam *param)
 
   vweup_modelyear = vweup_modelyear_new;
   vweup_enable_obd = vweup_enable_obd_new;
+  vweup_enable_t26 = vweup_enable_t26_new;
   m_cfg_cell_interval_drv = cell_interval_drv;
   m_cfg_cell_interval_chg = cell_interval_chg;
 
@@ -277,6 +288,10 @@ void OvmsVehicleVWeUp::ConfigChanged(OvmsConfigParam *param)
     StdMetrics.ms_v_bat_cac->SetValue(120);
     StdMetrics.ms_v_bat_range_full->SetValue(260);
     StdMetrics.ms_v_bat_range_ideal->SetValue(260 * socfactor);
+    if (StdMetrics.ms_v_bat_range_est->AsFloat() > 10 && StdMetrics.ms_v_bat_soc->AsFloat() > 10)
+      m_range_est_factor = StdMetrics.ms_v_bat_range_est->AsFloat() / StdMetrics.ms_v_bat_soc->AsFloat();
+    else
+      m_range_est_factor = 2.6f;
     StdMetrics.ms_v_charge_climit->SetValue(32);
 
     // Battery pack layout: 2P84S in 14 modules
@@ -293,6 +308,10 @@ void OvmsVehicleVWeUp::ConfigChanged(OvmsConfigParam *param)
     StdMetrics.ms_v_bat_cac->SetValue(50);
     StdMetrics.ms_v_bat_range_full->SetValue(160);
     StdMetrics.ms_v_bat_range_ideal->SetValue(160 * socfactor);
+    if (StdMetrics.ms_v_bat_range_est->AsFloat() > 10 && StdMetrics.ms_v_bat_soc->AsFloat() > 10)
+      m_range_est_factor = StdMetrics.ms_v_bat_range_est->AsFloat() / StdMetrics.ms_v_bat_soc->AsFloat();
+    else
+      m_range_est_factor = 1.6f;
     StdMetrics.ms_v_charge_climit->SetValue(16);
 
     // Battery pack layout: 2P102S in 17 modules
@@ -310,7 +329,7 @@ void OvmsVehicleVWeUp::ConfigChanged(OvmsConfigParam *param)
   }
 
   // Init OBD subsystem:
-  if (do_obd_init) {
+  if (vweup_enable_obd && do_obd_init) {
     OBDInit();
   }
   else if (!vweup_enable_obd) {
@@ -323,6 +342,7 @@ void OvmsVehicleVWeUp::ConfigChanged(OvmsConfigParam *param)
   WebInit();
 #endif
 }
+
 
 void OvmsVehicleVWeUp::Ticker1(uint32_t ticker)
 {
@@ -375,4 +395,49 @@ int OvmsVehicleVWeUp::GetNotifyChargeStateDelay(const char *state)
   else {
     return 3;
   }
+}
+
+
+/**
+ * ResetTripCounters: called at trip start to set reference points
+ *  Called by the connector subsystem detecting vehicle state changes,
+ *  i.e. T26 has priority if available.
+ */
+void OvmsVehicleVWeUp::ResetTripCounters()
+{
+  // Clear per trip counters:
+  StdMetrics.ms_v_pos_trip->SetValue(0);
+  StdMetrics.ms_v_bat_energy_recd->SetValue(0);
+  StdMetrics.ms_v_bat_energy_used->SetValue(0);
+  StdMetrics.ms_v_bat_coulomb_recd->SetValue(0);
+  StdMetrics.ms_v_bat_coulomb_used->SetValue(0);
+
+  // Get trip start references as far as available:
+  //  (if we don't have them yet, IncomingPollReply() will set them ASAP)
+  m_odo_start           = StdMetrics.ms_v_pos_odometer->AsFloat();
+  m_energy_recd_start   = StdMetrics.ms_v_bat_energy_recd_total->AsFloat();
+  m_energy_used_start   = StdMetrics.ms_v_bat_energy_used_total->AsFloat();
+  m_coulomb_recd_start  = StdMetrics.ms_v_bat_coulomb_recd_total->AsFloat();
+  m_coulomb_used_start  = StdMetrics.ms_v_bat_coulomb_used_total->AsFloat();
+
+  ESP_LOGD(TAG, "Trip start ref: odo=%f, er=%f, eu=%f, cr=%f, cu=%f", m_odo_start,
+    m_energy_recd_start, m_energy_used_start, m_coulomb_recd_start, m_coulomb_used_start);
+}
+
+
+/**
+ * ResetChargeCounters: call at charge start to set reference points
+ *  Called by the connector subsystem detecting vehicle state changes,
+ *  i.e. T26 has priority if available.
+ */
+void OvmsVehicleVWeUp::ResetChargeCounters()
+{
+  // Clear per charge counter:
+  StdMetrics.ms_v_charge_kwh->SetValue(0);
+
+  // Get charge start reference as far as available:
+  //  (if we don't have it yet, IncomingPollReply() will set it ASAP)
+  m_energy_charged_start = StdMetrics.ms_v_bat_energy_recd_total->AsFloat();
+
+  ESP_LOGD(TAG, "Charge start ref: er=%f", m_energy_charged_start);
 }

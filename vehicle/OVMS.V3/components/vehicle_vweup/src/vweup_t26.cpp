@@ -184,10 +184,7 @@ void OvmsVehicleVWeUp::vehicle_vweup_car_on(bool turnOn)
     StandardMetrics.ms_v_env_on->SetValue(true);
     PollSetState(VWEUP_ON);
     // TimeOffRequested = 0;
-    OdoStart = StandardMetrics.ms_v_pos_odometer->AsFloat();
-    EnergyRecdStart = StandardMetrics.ms_v_bat_energy_recd_total->AsFloat();
-    EnergyUsedStart = StandardMetrics.ms_v_bat_energy_used_total->AsFloat();
-    ESP_LOGD(TAG, "Start Counters: %f, %f, %f", OdoStart, EnergyRecdStart, EnergyUsedStart);
+    ResetTripCounters();
     // Turn off possibly running climate control timer
     if (ocu_awake) {
       xTimerStop(m_sendOcuHeartbeat, 0);
@@ -228,14 +225,16 @@ void OvmsVehicleVWeUp::IncomingFrameCan3(CAN_frame_t *p_frame)
   switch (p_frame->MsgID) {
 
     case 0x61A: // SOC.
-      if ((!StandardMetrics.ms_v_env_on->AsBool()) || (vweup_con == 0)) {
+      if (HasNoOBD() || !StandardMetrics.ms_v_env_on->AsBool()) {
         StandardMetrics.ms_v_bat_soc->SetValue(d[7] / 2.0);
       }
-      if (vweup_modelyear >= 2020) {
-        StandardMetrics.ms_v_bat_range_ideal->SetValue((260 * (d[7] / 2.0)) / 100.0); // This is dirty. Based on WLTP only. Should be based on SOH.
-      }
-      else {
-        StandardMetrics.ms_v_bat_range_ideal->SetValue((160 * (d[7] / 2.0)) / 100.0); // This is dirty. Based on WLTP only. Should be based on SOH.
+      if (HasNoOBD()) {
+        if (vweup_modelyear >= 2020) {
+          StandardMetrics.ms_v_bat_range_ideal->SetValue((260 * (d[7] / 2.0)) / 100.0); // This is dirty. Based on WLTP only. Should be based on SOH.
+        }
+        else {
+          StandardMetrics.ms_v_bat_range_ideal->SetValue((160 * (d[7] / 2.0)) / 100.0); // This is dirty. Based on WLTP only. Should be based on SOH.
+        }
       }
       break;
 
@@ -290,10 +289,15 @@ void OvmsVehicleVWeUp::IncomingFrameCan3(CAN_frame_t *p_frame)
       }
       break;
 
-    case 0x65D: // ODO
-      StandardMetrics.ms_v_pos_odometer->SetValue(((uint32_t)(d[3] & 0xf) << 12) | ((UINT)d[2] << 8) | d[1]);
-      StandardMetrics.ms_v_pos_trip->SetValue(StandardMetrics.ms_v_pos_odometer->AsFloat() - OdoStart); // so far we don't know where to get trip distance directly...
+    case 0x65D: { // ODO
+      float odo = (float) (((uint32_t)(d[3] & 0xf) << 12) | ((UINT)d[2] << 8) | d[1]);
+      StandardMetrics.ms_v_pos_odometer->SetValue(odo);
+      // so far we don't know where to get trip distance directly:
+      if (m_odo_start <= 0)
+        m_odo_start = odo;
+      StandardMetrics.ms_v_pos_trip->SetValue(odo - m_odo_start);
       break;
+    }
 
     case 0x320: // Speed
       // We need some awake message.
@@ -352,6 +356,10 @@ void OvmsVehicleVWeUp::IncomingFrameCan3(CAN_frame_t *p_frame)
       }
       break;
 
+    case 0x571: // 12 Volt
+      StandardMetrics.ms_v_bat_12v_voltage->SetValue(5 + (0.05 * d[0]));
+      break;
+
     case 0x61C: // Charge detection
       cd_count++;
       if (d[2] < 0x07) {
@@ -364,6 +372,7 @@ void OvmsVehicleVWeUp::IncomingFrameCan3(CAN_frame_t *p_frame)
         // count till 3 messages in a row to stop ghost triggering
         if (isCharging && cd_count == 3) {
           cd_count = 0;
+          ResetChargeCounters();
           StandardMetrics.ms_v_charge_mode->SetValue("standard");
           StandardMetrics.ms_v_door_chargeport->SetValue(true);
           StandardMetrics.ms_v_charge_pilot->SetValue(true);
@@ -371,8 +380,6 @@ void OvmsVehicleVWeUp::IncomingFrameCan3(CAN_frame_t *p_frame)
           StandardMetrics.ms_v_charge_substate->SetValue("onrequest");
           StandardMetrics.ms_v_charge_state->SetValue("charging");
           ESP_LOGI(TAG, "Car charge session started");
-          EnergyChargedStart = StandardMetrics.ms_v_bat_energy_recd_total->AsFloat();
-          ESP_LOGD(TAG, "Charge Start Counter: %f", EnergyChargedStart);
           PollSetState(VWEUP_CHARGING);
         }
         if (!isCharging && cd_count == 3) {
