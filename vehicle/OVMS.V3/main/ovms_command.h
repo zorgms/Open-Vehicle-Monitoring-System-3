@@ -257,9 +257,9 @@ class OvmsCommand : public ExternalRamAllocated
     OvmsCommand* FindCommand(const char* name);
     bool IsSecure() { return m_secure; }
     void Display(OvmsWriter* writer, int level);
+    void PutUsage(OvmsWriter* writer);
 
   private:
-    void PutUsage(OvmsWriter* writer);
     void ExpandUsage(const char* templ, OvmsWriter* writer, std::string& result);
 
   protected:
@@ -371,6 +371,8 @@ class OvmsCommandApp : public OvmsWriter
     uint32_t m_logfile_cyclecnt;
     uint32_t m_logtask_linecnt;
     uint32_t m_logtask_fsynctime;
+    time_t m_logtask_laststamp;
+    struct timeval m_logtask_basetime;
 
   public:
     TaskHandle_t m_expiretask;

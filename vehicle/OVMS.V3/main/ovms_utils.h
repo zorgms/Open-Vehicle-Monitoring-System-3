@@ -28,8 +28,8 @@
 ; THE SOFTWARE.
 */
 
-#ifndef __UTILS_H__
-#define __UTILS_H__
+#ifndef __OVMS_UTILS_H__
+#define __OVMS_UTILS_H__
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -44,6 +44,17 @@
 #define STRX(x)   #x
 #define STR(x)    STRX(x)
 #endif
+
+// Math utils:
+#define SQR(n) ((n)*(n))
+#define ABS(n) (((n) < 0) ? -(n) : (n))
+#define LIMIT_MIN(n,lim) ((n) < (lim) ? (lim) : (n))
+#define LIMIT_MAX(n,lim) ((n) > (lim) ? (lim) : (n))
+
+// Value precision utils:
+#define TRUNCPREC(fval,prec) (trunc((fval) * pow(10,(prec))) / pow(10,(prec)))
+#define ROUNDPREC(fval,prec) (round((fval) * pow(10,(prec))) / pow(10,(prec)))
+#define CEILPREC(fval,prec)  (ceil((fval)  * pow(10,(prec))) / pow(10,(prec)))
 
 // Standard array size (number of elements):
 #if __cplusplus < 201703L
@@ -204,7 +215,50 @@ std::string json_encode(const src_string text)
         break;
       }
     }
-	return buf;
+  return buf;
+  }
+
+/**
+ * display_encode: encode string displaying unprintablel characters
+ * Emulates (linux) "cat -t" semantics
+ */
+template <class src_string>
+std::string display_encode(const src_string text)
+  {
+  std::string buf;
+  buf.reserve(text.size() + (text.size() >> 3));
+  for (int i = 0; i < text.size(); i++)
+    {
+    char ch = text[i];
+    if (!isascii(ch))
+      {
+      buf += "M-";
+      ch = toascii(ch);
+      }
+    if (ch == '\177')
+      {
+      buf += "^?";
+      continue;
+      }
+    if (ch == '\t')
+      {
+      buf += "^I";
+      continue;
+      }
+    if (ch == '\n')
+      {
+      // deviation from "cat -t"
+      buf += "^J";
+      continue;
+      }
+    if (!isprint(ch))
+      {
+      ch = ch ^ 0x40;
+      buf += "^";
+      }
+    buf += ch;
+    }
+  return buf;
   }
 
 
@@ -248,6 +302,14 @@ int rmtree(const std::string path);
 bool path_exists(const std::string path);
 
 /**
+ * load & save file to/from string
+ *  - saving creates missing directories automatically & signals system.vfs.file.changed
+ *  - return value: 0 = ok / errno
+ */
+int load_file(const std::string &path, extram::string &content);
+int save_file(const std::string &path, extram::string &content);
+
+/**
  * get_user_agent: create User-Agent string from OVMS versions & vehicle ID
  *  Scheme: "ovms/v<hw_version> (<vehicle_id> <sw_version>)"
  */
@@ -264,4 +326,4 @@ double float2double(float f);
 std::string idtag(const char* tag, void* instance);
 #define IDTAG idtag(TAG,this)
 
-#endif //#ifndef __UTILS_H__
+#endif // __OVMS_UTILS_H__

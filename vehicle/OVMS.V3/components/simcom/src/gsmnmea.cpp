@@ -108,7 +108,7 @@ void GsmNMEA::IncomingLine(const std::string line)
 
   if (!std::getline(sentence, token, ','))
     return;
-  if (token[0] != '$')
+  if (token.length() < 6 || token[0] != '$')
     return;
 
   if (token.substr(3) == "GNS")
@@ -234,7 +234,6 @@ void GsmNMEA::IncomingLine(const std::string line)
       int tm = utc_to_timestamp(date, time);
       if (tm < 1572735600) // 2019-11-03 00:00:00
         tm += (1024*7*86400); // Nasty kludge to workaround SIM5360 week rollover
-      *StdMetrics.ms_m_timeutc = (int) tm;
       MyTime.Set(TAG, 2, true, tm);
       }
 

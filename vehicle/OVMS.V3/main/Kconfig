@@ -301,6 +301,13 @@ config OVMS_VEHICLE_RENAULTZOE
     help
         Enable to include support for Renault Zoe vehicles.
 
+config OVMS_VEHICLE_MAXED3
+    bool "Include support for Maxus eDeliver3 vehicle"
+    default y
+    depends on OVMS
+    help
+        Enable to include support for Maxus eDeliver3 vehicle.
+
 config OVMS_VEHICLE_KIASOULEV
     bool "Include support for Kia Soul EV vehicles"
     default y
@@ -406,6 +413,20 @@ config OVMS_VEHICLE_BMWI3
     depends on OVMS
     help
         Enable to include support for BMW i3 or i3s vehicles
+
+config OVMS_VEHICLE_HYUNDAI_IONIQVFL
+    bool "Include support for Hyundai Ioniq Electric 28kWh (vFL)"
+    default y
+    depends on OVMS
+    help
+        Enable to include support for Hyundai Ioniq Electric 28kWh (vFL).
+
+config OVMS_VEHICLE_JAGUARIPACE
+    bool "Include support for Jaguar Ipace"
+    default y
+    depends on OVMS
+    help
+        Enable to include support for Jaguar Ipace.
 
 config OVMS_VEHICLE_RXTASK_STACK
     int "Stack size for vehicle RX task"
@@ -660,6 +681,13 @@ endmenu # Component Options
 
 menu "Developer Options"
     depends on OVMS
+
+config OVMS_DEV_SECUREASYNC
+    bool "Initialize async console in enabled mode"
+    default n
+    depends on OVMS
+    help
+        Enable for async console to be automatically logged in (danger: insecure)
 
 config OVMS_DEV_CONFIGVFS
     bool "Disable the usual protections for configuration visibility in VFS"

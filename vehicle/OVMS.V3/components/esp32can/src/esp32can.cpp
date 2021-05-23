@@ -98,13 +98,13 @@ static inline uint32_t ESP32CAN_rxframe(esp32can *me, BaseType_t* task_woken)
       // RMC overflow => reset controller:
       MODULE_ESP32CAN->MOD.B.RM = 1;
       MODULE_ESP32CAN->MOD.B.RM = 0;
-      error_irqs = __CAN_IRQ_DATA_OVERRUN;
+      error_irqs |= __CAN_IRQ_DATA_OVERRUN;
       me->m_status.error_resets++;
       }
     else if (MODULE_ESP32CAN->SR.B.DOS)
       {
       // FIFO overflow => clear overflow & discard <RMC> messages to resync:
-      error_irqs = __CAN_IRQ_DATA_OVERRUN;
+      error_irqs |= __CAN_IRQ_DATA_OVERRUN;
       MODULE_ESP32CAN->CMR.B.CDO = 1;
       int8_t discard = MODULE_ESP32CAN->RMC.B.RMC;
       while (discard--)
@@ -122,6 +122,17 @@ static inline uint32_t ESP32CAN_rxframe(esp32can *me, BaseType_t* task_woken)
 
       // get FIR
       msg.body.frame.FIR.U = MODULE_ESP32CAN->MBX_CTRL.FCTRL.FIR.U;
+
+      // Detect invalid frames
+      if (msg.body.frame.FIR.B.DLC > sizeof(msg.body.frame.data.u8))
+        {
+        error_irqs |= __CAN_IRQ_INVALID_RX;
+        me->m_status.invalid_rx++;
+
+        // Request next frame:
+        MODULE_ESP32CAN->CMR.B.RRB = 1;
+        continue;
+        }
 
       // check if this is a standard or extended CAN frame
       if (msg.body.frame.FIR.B.FF == CAN_frame_std)
@@ -204,6 +215,7 @@ static IRAM_ATTR void ESP32CAN_isr(void *pvParameters)
         |__CAN_IRQ_DATA_OVERRUN	  // IR.3 Data Overrun Interrupt
         |__CAN_IRQ_ERR_PASSIVE    // IR.5 Error Passive Interrupt (passive state change)
         |__CAN_IRQ_BUS_ERR        // IR.7 Bus Error Interrupt
+        |__CAN_IRQ_INVALID_RX     // Invalid RX Frame (synthetic)
         );
 
     // Handle wakeup interrupt:
@@ -216,11 +228,16 @@ static IRAM_ATTR void ESP32CAN_isr(void *pvParameters)
   // Get error counters:
   uint32_t rxerr = MODULE_ESP32CAN->RXERR.U;
   uint32_t txerr = MODULE_ESP32CAN->TXERR.U;
+  uint32_t status = MODULE_ESP32CAN->SR.U;
+  if (status & __CAN_STS_BUS_OFF)
+    {
+    rxerr |= 0x100;
+    txerr |= 0x100;
+    }
 
   // Handle error interrupts:
   if (error_irqs)
     {
-    uint32_t status = MODULE_ESP32CAN->SR.U;
     uint32_t ecc = MODULE_ESP32CAN->ECC.U;
     uint32_t error_flags = error_irqs << 16 | (status & 0b11001110) << 8 | (ecc & 0xff);
 
@@ -251,7 +268,7 @@ static IRAM_ATTR void ESP32CAN_isr(void *pvParameters)
       if (!me->m_tx_abort)
         {
         CAN_queue_msg_t msg;
-        if (ecc != 0 || (status & (__CAN_STS_DATA_OVERRUN|__CAN_STS_BUS_OFF)) != 0)
+        if (ecc != 0 || (status & (__CAN_STS_DATA_OVERRUN|__CAN_STS_BUS_OFF|__CAN_IRQ_INVALID_RX)) != 0)
           msg.type = CAN_logerror;
         else
           msg.type = CAN_logstatus;
@@ -310,8 +327,9 @@ esp32can::~esp32can()
   MyESP32can = NULL;
   }
 
-void esp32can::InitController()
+esp_err_t esp32can::InitController()
   {
+  bool brp_div = 0;
   double __tq; // Time quantum
 
   // Set to PELICAN mode
@@ -336,7 +354,20 @@ void esp32can::InitController()
     }
 
   // Set baud rate prescaler
-  MODULE_ESP32CAN->BTR0.B.BRP=(uint8_t)round((((APB_CLK_FREQ * __tq) / 2) - 1)/1000000)-1;
+  int brp = round((((APB_CLK_FREQ * __tq) / 2) - 1)/1000000)-1;
+  esp_chip_info_t chip;
+  esp_chip_info(&chip);
+  if (brp > BRP_MAX)
+    {
+    /* ESP32 revision 2 and higher have a divide by 2 bit */
+    if (chip.revision < 2)
+      return ESP_FAIL;
+    brp = brp / 2;
+    brp_div = 1;
+    if (brp > BRP_MAX)
+      return ESP_FAIL;
+    }
+  MODULE_ESP32CAN->BTR0.B.BRP = (uint8_t)brp;
 
   /* Set sampling
    * 1 -> triple; the bus is sampled three times; recommended for low/medium speed buses     (class A and B) where filtering spikes on the bus line is beneficial
@@ -344,7 +375,11 @@ void esp32can::InitController()
   MODULE_ESP32CAN->BTR1.B.SAM=0x1;
 
   // Enable all interrupts except arbitration loss (can be ignored):
-  MODULE_ESP32CAN->IER.U = 0xff - __CAN_IRQ_ARB_LOST;
+  uint32_t ier = 0xff & ~__CAN_IRQ_ARB_LOST;
+  // Turn off BRP_DIV if we're V2 or higher (and don't want it set)
+  if (chip.revision >= 2 && !brp_div)
+      ier &= ~__CAN_IER_BRP_DIV;
+  MODULE_ESP32CAN->IER.U = ier;
 
   // No acceptance filtering, as we want to fetch all messages
   MODULE_ESP32CAN->MBX_CTRL.ACC.CODE[0] = 0;
@@ -373,6 +408,7 @@ void esp32can::InitController()
   // Clear interrupt flags
   (void)MODULE_ESP32CAN->IR.U;
   m_tx_abort = false;
+  return ESP_OK;
   }
 
 esp_err_t esp32can::Start(CAN_mode_t mode, CAN_speed_t speed)
@@ -380,10 +416,15 @@ esp_err_t esp32can::Start(CAN_mode_t mode, CAN_speed_t speed)
   switch (speed)
     {
     case CAN_SPEED_33KBPS:
+    case CAN_SPEED_50KBPS:
     case CAN_SPEED_83KBPS:
-      /* XXX not yet */
-      ESP_LOGW(TAG,"%d not supported",speed);
-      return ESP_FAIL;
+      esp_chip_info_t chip;
+      esp_chip_info(&chip);
+      if (chip.revision < 2)
+        {
+        ESP_LOGW(TAG, "%d only supported with ESP32 V2 and higher", speed);
+        return ESP_FAIL;
+        }
     default:
       break;
     }
@@ -415,7 +456,7 @@ esp_err_t esp32can::Start(CAN_mode_t mode, CAN_speed_t speed)
 
   ESP32CAN_ENTER_CRITICAL();
 
-  InitController();
+  esp_err_t err = InitController();
 
   // clear statistics:
   ClearStatus();
@@ -424,6 +465,12 @@ esp_err_t esp32can::Start(CAN_mode_t mode, CAN_speed_t speed)
   MODULE_ESP32CAN->MOD.B.RM = 0;
 
   ESP32CAN_EXIT_CRITICAL();
+
+  if (err != ESP_OK)
+    {
+    ESP_LOGE(TAG, "Failed to set speed to %d", speed);
+    return err;
+    }
 
   // And record that we are powered on
   pcp::SetPowerMode(On);
