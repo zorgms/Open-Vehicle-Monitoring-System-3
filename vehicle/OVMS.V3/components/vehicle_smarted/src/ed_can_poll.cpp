@@ -151,7 +151,7 @@ void OvmsVehicleSmartED::ObdInitPoll() {
   m_bms_readingspermodule_c = 0;
 
   m_bms_limit_cmin = 1000;
-  m_bms_limit_cmax = 22000;
+  m_bms_limit_cmax = 30000;
 
   mt_v_bat_pack_cmin = new OvmsMetricFloat("xse.v.b.p.capacity.min", SM_STALE_HIGH, Other);
   mt_v_bat_pack_cmax = new OvmsMetricFloat("xse.v.b.p.capacity.max", SM_STALE_HIGH, Other);
