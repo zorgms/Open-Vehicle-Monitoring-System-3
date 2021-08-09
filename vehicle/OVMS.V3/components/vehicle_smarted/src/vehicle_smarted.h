@@ -134,6 +134,7 @@ class OvmsVehicleSmartED : public OvmsVehicle
     void PollReply_BMS_BattADCref(const char* reply_data, uint16_t reply_len);
     void PollReply_BMS_BattVolts(const char* reply_data, uint16_t reply_len);
     void PollReply_BMS_BattCapacity(const char* reply_data, uint16_t reply_len);
+    void PollReply_BMS_BattInternalResistanceCorrectionFactor(const char* reply_data, uint16_t reply_len);
     void PollReply_BMS_BattTemp(const char* reply_data, uint16_t reply_len);
     void PollReply_BMS_ModuleTemp(const char* reply_data, uint16_t reply_len);
     void PollReply_BMS_BattDate(const char* reply_data, uint16_t reply_len);
@@ -254,6 +255,8 @@ class OvmsVehicleSmartED : public OvmsVehicle
     
     OvmsMetricVector<int> *mt_myBMS_HWrev;        //!< hardware-revision
     OvmsMetricVector<int> *mt_myBMS_SWrev;        //!< soft-revision
+    
+    OvmsMetricVector<float> *mt_myBMS_InternalResistance;
     
     OvmsMetricBool* mt_CEPC_Wippen;               //!< Recu Wippen installed
     

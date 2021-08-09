@@ -101,6 +101,7 @@ static const OvmsVehicle::poll_pid_t smarted_polls[] =
   { 0x7E7, 0x7EF, VEHICLE_POLL_TYPE_OBDIIEXTENDED, 0xF190, {  0,300,600,600 }, 0, ISOTP_STD }, // rqBattVIN
   { 0x7E7, 0x7EF, VEHICLE_POLL_TYPE_OBDIIEXTENDED, 0x0208, {  0,300,600,60 }, 0, ISOTP_STD }, // rqBattVolts
   { 0x7E7, 0x7EF, VEHICLE_POLL_TYPE_OBDIIEXTENDED, 0x0310, {  0,300,600,60 }, 0, ISOTP_STD }, // rqBattCapacity
+  { 0x7E7, 0x7EF, VEHICLE_POLL_TYPE_OBDIIEXTENDED, 0x030D, {  0,300,600,60 }, 0, ISOTP_STD }, // rqBattInternalResistanceCorrectionFactor
   { 0x7E7, 0x7EF, VEHICLE_POLL_TYPE_OBDIIEXTENDED, 0x0203, {  0,300,600,600 }, 0, ISOTP_STD }, // rqBattAmps
   { 0x7E7, 0x7EF, VEHICLE_POLL_TYPE_OBDIIEXTENDED, 0x0207, {  0,300,600,600 }, 0, ISOTP_STD }, // rqBattADCref
   { 0x7E7, 0x7EF, VEHICLE_POLL_TYPE_OBDIIEXTENDED, 0x0304, {  0,300,600,600 }, 0, ISOTP_STD }, // rqBattDate
@@ -207,6 +208,7 @@ void OvmsVehicleSmartED::ObdInitPoll() {
   mt_myBMS_BattVIN             = new OvmsMetricString("xse.mybms.batt.vin");
   mt_myBMS_HWrev               = new OvmsMetricVector<int>("xse.mybms.HW.rev", SM_STALE_HIGH, Other);
   mt_myBMS_SWrev               = new OvmsMetricVector<int>("xse.mybms.SW.rev", SM_STALE_HIGH, Other);
+  mt_myBMS_InternalResistance  = new OvmsMetricVector<float>("xse.mybms.internal.resistance", SM_STALE_HIGH, Other);
 
   mt_CEPC_Wippen               = new OvmsMetricBool("xse.cepc.wippen", SM_STALE_MID);
   
@@ -309,6 +311,9 @@ void OvmsVehicleSmartED::IncomingPollReply(canbus* bus, uint16_t type, uint16_t 
       break;
     case 0x0310: // rqBattCapacity
       PollReply_BMS_BattCapacity(rxbuf.data(), rxbuf.size());
+      break;
+    case 0x030D: // rqBattInternalResistanceCorrectionFactor
+      PollReply_BMS_BattInternalResistanceCorrectionFactor(rxbuf.data(), rxbuf.size());
       break;
     case 0x030B: // rqBattHVContactorCyclesLeft
       PollReply_BMS_BattHVContactorCyclesLeft(rxbuf.data(), rxbuf.size());
@@ -622,6 +627,13 @@ void OvmsVehicleSmartED::PollReply_BMS_BattCapacity(const char* reply_data, uint
   mt_v_bat_Cap_combined_quality->SetValue( value / 65535.0 );
   
   StandardMetrics.ms_v_bat_cac->SetValue(mt_v_bat_Cap_As_avg->AsFloat()/360.0, AmpHours);
+}
+
+void OvmsVehicleSmartED::PollReply_BMS_BattInternalResistanceCorrectionFactor(const char* reply_data, uint16_t reply_len) {
+  for(uint16_t n = 0; n < (94 * 2); n = n + 2) {
+    float cell = (reply_data[n] * 256 + reply_data[n + 1]);
+    mt_myBMS_InternalResistance->SetElemValue(n/2, cell*0.0001220699996f);
+  }
 }
 
 void OvmsVehicleSmartED::PollReply_NLG6_ChargerPN_HW(const char* reply_data, uint16_t reply_len) {
@@ -958,7 +970,7 @@ void OvmsVehicleSmartED::BmsDiag(int verbosity, OvmsWriter* writer) {
   
   writer->puts("-------------------------------------------");
   writer->puts("---- ED Battery Management Diagnostics ----");
-  writer->puts("----         OVMS Version 1.2          ----");
+  writer->puts("----         OVMS Version 1.3          ----");
   writer->puts("-------------------------------------------");
   
   writer->printf("Battery VIN : %s\n", (char*) mt_myBMS_BattVIN->AsString().c_str());
@@ -1052,9 +1064,13 @@ void OvmsVehicleSmartED::BmsDiag(int verbosity, OvmsWriter* writer) {
   
   writer->puts("-------------------------------------------");
   
-  writer->puts(" # ;mV   ;As/10");
+  writer->printf("Internal Resistance Correction Factor: %.4f\n", mt_myBMS_InternalResistance->GetElemValue(0));
+  
+  writer->puts("-------------------------------------------");
+  
+  writer->puts(" # ;mV   ;As/10  ;IRCF");
   for(int16_t n = 0; n < CELLCOUNT; n++){
-    writer->printf("%3d; %4.0f; %5.0f\n", n+1, m_bms_voltages[n]*1000 - mt_myBMS_ADCvoltsOffset->AsInt(), m_bms_capacitys[n]);
+    writer->printf("%3d; %4.0f; %5.0f; %.4f\n", n+1, m_bms_voltages[n]*1000 - mt_myBMS_ADCvoltsOffset->AsInt(), m_bms_capacitys[n], mt_myBMS_InternalResistance->GetElemValue(n+1));
   }
   writer->puts("-------------------------------------------");
   writer->puts("Individual Cell Statistics:");
@@ -1103,7 +1119,7 @@ void OvmsVehicleSmartED::printRPTdata(int verbosity, OvmsWriter* writer) {
   
   writer->puts("-----------------------------------------");
   writer->puts("---       Battery Status Report       ---");
-  writer->puts("---         OVMS Version 1.0          ---");
+  writer->puts("---         OVMS Version 1.3          ---");
   writer->puts("-----------------------------------------");
   
   writer->printf("Battery VIN: %s\n", (char*) mt_myBMS_BattVIN->AsString().c_str());
