@@ -89,7 +89,7 @@ void OvmsVehicleRenaultZoe::WebCfgFeatures(PageEntry_t& p, PageContext_t& c)
     // validate:
     if (vehicle_type != "") {
       int v = atoi(vehicle_type.c_str());
-      if (v < 0 || v > 1) {
+      if (v < 0 || v > 2) {
         error += "<li data-input=\"vehicle_type\">Something went wrong</li>";
       }
     }
@@ -129,6 +129,7 @@ void OvmsVehicleRenaultZoe::WebCfgFeatures(PageEntry_t& p, PageContext_t& c)
   c.input_select_start("Vehicle type", "vehicle_type");
   c.input_select_option("Zoe R240 (PH1)", "0", vehicle_type == "0");
   c.input_select_option("Kangoo",    "1", vehicle_type == "1");
+  c.input_select_option("Zoe (PH2)", "2", vehicle_type == "2");
   c.input_select_end();
   
   c.print("<hr>");

@@ -48,49 +48,12 @@ static const char *TAG = "v-zoe";
 
 #include "vehicle_renaultzoe.h"
 
-// Pollstate 0 - POLLSTATE_OFF      - car is off
-// Pollstate 1 - POLLSTATE_ON       - car is on
-// Pollstate 2 - POLLSTATE_RUNNING  - car is driving
-// Pollstate 3 - POLLSTATE_CHARGING - car is charging
-static const OvmsVehicle::poll_pid_t renault_zoe_polls[] = {
-  //{ 0x7e4, 0x7ec, VEHICLE_POLL_TYPE_OBDIIEXTENDED, 0x2002, { 0, 10, 10, 10 } },  // SOC
-  //{ 0x7e4, 0x7ec, VEHICLE_POLL_TYPE_OBDIIEXTENDED, 0x2006, { 0, 10, 10, 10 } },  // Odometer
-  //{ 0x7e4, 0x7ec, VEHICLE_POLL_TYPE_OBDIIEXTENDED, 0x3203, { 0, 10, 10, 10 } },  // Battery Voltage
-  { 0x7e4, 0x7ec, VEHICLE_POLL_TYPE_OBDIIEXTENDED, 0x3204, { 0, 30, 1, 2 }, 0, ISOTP_STD },  // Battery Current
-  //{ 0x7e4, 0x7ec, VEHICLE_POLL_TYPE_OBDIIEXTENDED, 0x3028, { 0, 10, 10, 10 } },  // 12Battery Current
-  //7ec,24,39,.005,0,0,kwh,22320C,62320C,ff,Available discharge Energy
-  //{ 0x7e4, 0x7ec, VEHICLE_POLL_TYPE_OBDIIEXTENDED, 0x320C, { 0, 10, 10, 10 } },  // Available discharge Energy
-  //7ec,30,31,1,0,0,,223332,623332,ff,Electrical Machine functionning Authorization,0:Not used;1:Inverter Off;2:Inverter On\n" //
-  //{ 0x7e4, 0x7ec, VEHICLE_POLL_TYPE_OBDIIEXTENDED, 0x3332, { 0, 10, 10, 10 } },  //  Inverter Off: 1; Inverter On: 2
-  //{ 0x7e4, 0x7ec, VEHICLE_POLL_TYPE_OBDIIEXTENDED, 0x2005, { 0, 10, 10, 10 } },  // 12Battery Voltage
-  //{ 0x7e4, 0x7ec, VEHICLE_POLL_TYPE_OBDIIEXTENDED, 0x3206, { 0, 10, 10, 10 } },  // Battery SOH
-  //{ 0x7e4, 0x7ec, VEHICLE_POLL_TYPE_OBDIIEXTENDED, 0x33dc, { 0, 10, 10, 10 } },  // Consumed Domnestic Engergy
-  //{ 0x75a, 0x77e, VEHICLE_POLL_TYPE_OBDIIEXTENDED, 0x3018, { 0, 10, 10, 10 } },  // DCDC Temp
-  //{ 0x792, 0x793, VEHICLE_POLL_TYPE_OBDIIEXTENDED, 0x504A, { 0, 10, 10, 10 } },  // Mains active Power consumed
-  //{ 0x792, 0x793, VEHICLE_POLL_TYPE_OBDIIEXTENDED, 0x5063, { 0, 10, 10, 10 } },  // Charging State
-  //{ 0x792, 0x793, VEHICLE_POLL_TYPE_OBDIIEXTENDED, 0x5062, { 0, 10, 10, 10 } },  // Ground Resistance
-  { 0x79b, 0x7bb, VEHICLE_POLL_TYPE_OBDIIGROUP, 0x04, { 0, 60, 600, 60 }, 0, ISOTP_STD },  // Temp Bat Module 1
-  { 0x79b, 0x7bb, VEHICLE_POLL_TYPE_OBDIIGROUP, 0x41, { 0, 60, 600, 60 }, 0, ISOTP_STD },  // Cell Bat Module 1-62
-  { 0x79b, 0x7bb, VEHICLE_POLL_TYPE_OBDIIGROUP, 0x42, { 0, 60, 600, 60 }, 0, ISOTP_STD },  // Cell Bat Module 63-96
-  //+"7bc,28,39,1,4094,0,N·m,224B7C,624B7C,ff,Electric brake wheels torque request\n" //
-  //+ "Uncoupled Braking Pedal,2197,V,7bc,79c,UBP,-,5902ff\n"
-  //{ 0x79c, 0x7bc, VEHICLE_POLL_TYPE_OBDIIGROUP, 0x04, { 0, 120, 1, 120 } }, // Braking Pedal
-  //{ 0x742, 0x762, VEHICLE_POLL_TYPE_OBDIIEXTENDED, 0x012D, { 0, 0, 10, 10 } }, // Motor temperature (nope)
-  // -END-
-  POLL_LIST_END
-};
+// Vehicle states:
+#define STATE_OFF             0
+#define STATE_ON              1
+#define STATE_RUNNING         2
+#define STATE_CHARGING        3
 
-static const OvmsVehicle::poll_pid_t renault_kangoo_polls[] = {
-  // { 0x7e4, 0x7ec, VEHICLE_POLL_TYPE_OBDIIEXTENDED, 0x2006, { 0, 60, 0, 0 }, 0, ISOTP_STD },  // Odometer
-  { 0x7e4, 0x7ec, VEHICLE_POLL_TYPE_OBDIIEXTENDED, 0x3203, { 0, 10, 1, 2 }, 0, ISOTP_STD },  // Battery Voltage
-  { 0x7e4, 0x7ec, VEHICLE_POLL_TYPE_OBDIIEXTENDED, 0x3204, { 0, 10, 1, 2 }, 0, ISOTP_STD },  // Battery Current
-  { 0x7e4, 0x7ec, VEHICLE_POLL_TYPE_OBDIIEXTENDED, 0x33F6, { 0, 60, 600, 60 }, 0, ISOTP_STD }, // Inverter Temp
-  { 0x79b, 0x7bb, VEHICLE_POLL_TYPE_OBDIIGROUP, 0x04, { 0, 60, 600, 60 }, 0, ISOTP_STD },  // Temp Bat Module 1
-  { 0x79b, 0x7bb, VEHICLE_POLL_TYPE_OBDIIGROUP, 0x41, { 0, 60, 600, 60 }, 0, ISOTP_STD },  // Cell Bat Module 1-62
-  { 0x79b, 0x7bb, VEHICLE_POLL_TYPE_OBDIIGROUP, 0x42, { 0, 60, 600, 60 }, 0, ISOTP_STD },  // Cell Bat Module 63-96
-  // { 0x792, 0x793, VEHICLE_POLL_TYPE_OBDIIEXTENDED, 0x504A, { 0, 0, 0, 10 }, 0, ISOTP_STD },  // Mains active Power consumed
-  POLL_LIST_END
-};
 
 OvmsVehicleRenaultZoe* OvmsVehicleRenaultZoe::GetInstance(OvmsWriter* writer /*=NULL*/)
 {
@@ -107,23 +70,15 @@ OvmsVehicleRenaultZoe* OvmsVehicleRenaultZoe::GetInstance(OvmsWriter* writer /*=
 OvmsVehicleRenaultZoe::OvmsVehicleRenaultZoe() {
   ESP_LOGI(TAG, "Start Renault Zoe/Kangoo vehicle module");
 
-  StandardMetrics.ms_v_type->SetValue("RZ");
+  //StandardMetrics.ms_v_type->SetValue("RZ");
   StandardMetrics.ms_v_charge_inprogress->SetValue(false);
   
   MyConfig.RegisterParam("xrz", "Renault Zoe/Kangoo", true, true);
   ConfigChanged(NULL);
   
-  // Zoe CAN bus runs at 500 kbps
-  RegisterCanBus(1, CAN_MODE_ACTIVE, CAN_SPEED_500KBPS);
-
-	// Poll Specific PIDs
-  POLLSTATE_OFF;
-  if (IsZoe()) PollSetPidList(m_can1, renault_zoe_polls);
-  if (IsKangoo()) PollSetPidList(m_can1, renault_kangoo_polls);
-  PollSetThrottling(5);
-  PollSetResponseSeparationTime(20);
-  
   // init metrics:
+  mt_charge_state         = MyMetrics.InitInt("xrz.c.state", 30, 0, Other, true);
+  mt_aux_12v_voltage      = MyMetrics.InitFloat("xrz.v.aux.12v.voltage", 30, 0, Volts, true);
   mt_pos_odometer_start   = MyMetrics.InitFloat("xrz.v.pos.odometer.start", SM_STALE_MID, 0, Kilometers);
   mt_bus_awake            = MyMetrics.InitBool("xrz.v.bus.awake", SM_STALE_MIN, false);
   mt_available_energy     = MyMetrics.InitFloat("xrz.v.avail.energy", SM_STALE_MID, 0, kWh);
@@ -134,14 +89,13 @@ OvmsVehicleRenaultZoe::OvmsVehicleRenaultZoe() {
   cmd_zoe = MyCommandApp.RegisterCommand("zoe", "Renault Zoe/Kangoo");
 	cmd_zoe->RegisterCommand("trip", "Show vehicle trip", zoe_trip);
   
-  // BMS configuration:
-  BmsSetCellArrangementVoltage(96, 8);
-  if (IsZoe()) BmsSetCellArrangementTemperature(12, 1);
-  if (IsKangoo()) BmsSetCellArrangementTemperature(4, 1);
-  BmsSetCellLimitsVoltage(2.0, 5.0);
-  BmsSetCellLimitsTemperature(-39, 200);
-  BmsSetCellDefaultThresholdsVoltage(0.030, 0.050);
-  BmsSetCellDefaultThresholdsTemperature(4.0, 5.0);
+  // Zoe CAN bus runs at 500 kbps
+  RegisterCanBus(1, CAN_MODE_ACTIVE, CAN_SPEED_500KBPS);
+
+	// Init car spec configs:
+  if (IsZoePh1()) ZoePH1Init();
+  if (IsZoePh2()) ZoePH2Init();
+  if (IsKangoo()) KangooInit();
   
 #ifdef CONFIG_OVMS_COMP_WEBSERVER
   WebInit();
@@ -150,7 +104,13 @@ OvmsVehicleRenaultZoe::OvmsVehicleRenaultZoe() {
 
 OvmsVehicleRenaultZoe::~OvmsVehicleRenaultZoe() {
   ESP_LOGI(TAG, "Stop Renault Zoe/Kangoo vehicle module");
-  
+  PollSetPidList(m_can1, NULL);
+  MyMetrics.DeregisterMetric(mt_charge_state);
+  MyMetrics.DeregisterMetric(mt_pos_odometer_start);
+  MyMetrics.DeregisterMetric(mt_bus_awake);
+  MyMetrics.DeregisterMetric(mt_available_energy);
+  MyMetrics.DeregisterMetric(mt_heatwater_temp);
+  MyMetrics.DeregisterMetric(mt_main_power_consumed);
 #ifdef CONFIG_OVMS_COMP_WEBSERVER
   WebDeInit();
 #endif
@@ -163,12 +123,13 @@ void OvmsVehicleRenaultZoe::IncomingFrameCan1(CAN_frame_t* p_frame) {
 	uint8_t *data = p_frame->data.u8;
 	//ESP_LOGI(TAG, "PID:%x DATA: %02x %02x %02x %02x %02x %02x %02x %02x", p_frame->MsgID, data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7]);
   
-  if (m_candata_poll != 1 && m_ready) {
-    ESP_LOGI(TAG,"Car has woken (CAN bus activity)");
-    mt_bus_awake->SetValue(true);
-    //StandardMetrics.ms_v_env_awake->SetValue(true);
-    m_candata_poll = 1;
-    if (m_enable_write) POLLSTATE_ON;
+  if (IsZoePh1() || IsKangoo()) {
+    if (m_candata_poll != 1 && m_ready) {
+      ESP_LOGI(TAG,"Car has woken (CAN bus activity)");
+      mt_bus_awake->SetValue(true);
+      m_candata_poll = 1;
+      if (m_enable_write) POLLSTATE_ON;
+    }
   }
   
   m_candata_timer = RZ_CANDATA_TIMEOUT;
@@ -368,7 +329,7 @@ void OvmsVehicleRenaultZoe::IncomingFrameCan1(CAN_frame_t* p_frame) {
       // 42e,18,19,1,0,0,,,,ff,HV Bat Level2 Failure
       // 42e,20,24,5,0,0,%,,,e2,Engine Fan Speed
       // 42e,25,34,0.5,0,0,V,,,ff,HV Network Voltage
-      if (IsZoe()) {
+      if (IsZoePh1()) {
         StandardMetrics.ms_v_bat_voltage->SetValue((float) (((CAN_UINT(3))>>5) & 0x3ff) * 0.5); // HV Voltage
         StandardMetrics.ms_v_charge_voltage->SetValue((float) (((CAN_UINT(3))>>5) & 0x3ff) * 0.5);
       }
@@ -611,7 +572,7 @@ void OvmsVehicleRenaultZoe::IncomingFrameCan1(CAN_frame_t* p_frame) {
       // 656,21,31,1,0,0,min,,,ff,Cluster Scheduled Time
       // 656,32,42,1,0,0,min,,,ff,Cluster Scheduled Time 2
       // 656,48,55,1,40,0,°C,,,e2,External Temp
-      if (IsZoe()) StandardMetrics.ms_v_env_temp->SetValue((float) CAN_BYTE(6)-40);
+      if (IsZoePh1()) StandardMetrics.ms_v_env_temp->SetValue((float) CAN_BYTE(6)-40);
       // 656,56,57,1,0,0,,,,e2,Clim PC Customer Activation
       break;
     case 0x657:
@@ -824,14 +785,17 @@ void OvmsVehicleRenaultZoe::IncomingPollReply(canbus* bus, uint16_t type, uint16
 			break;
     // ****** EVC *****
 		case 0x7ec:
+		case 0x18daf1da:
 			IncomingEVC(type, pid, rxbuf.data(), rxbuf.size());
 			break;
     // ****** BCB *****
     case 0x793:
+    case 0x18daf1de:
       IncomingBCB(type, pid, rxbuf.data(), rxbuf.size());
       break;
     // ****** LBC *****
     case 0x7bb:
+    case 0x18daf1db:
       IncomingLBC(type, pid, rxbuf.data(), rxbuf.size());
       break;
     // ****** UBP *****
@@ -843,6 +807,110 @@ void OvmsVehicleRenaultZoe::IncomingPollReply(canbus* bus, uint16_t type, uint16
       IncomingPEB(type, pid, rxbuf.data(), rxbuf.size());
       break;
 	}
+}
+
+/**
+ * PollerStateTicker: framework callback: check for state changes
+ *  This is called by VehicleTicker1() just before the next PollerSend().
+ */
+void OvmsVehicleRenaultZoe::PollerStateTicker() {
+  if (IsZoePh2()) {
+    bool car_online = (m_can1->GetErrorState() < CAN_errorstate_passive && !mt_charge_state->IsStale());
+    int charge_state = mt_charge_state->AsInt();
+
+    // Determine new polling state:
+    int poll_state;
+    if (!car_online)
+      poll_state = STATE_OFF;
+    else if (charge_state)
+      poll_state = STATE_CHARGING;
+    else
+      poll_state = STATE_ON;
+
+    // Set base state flags:
+    StdMetrics.ms_v_env_aux12v->SetValue(car_online);
+    StdMetrics.ms_v_env_charging12v->SetValue(car_online);
+    StdMetrics.ms_v_env_awake->SetValue(poll_state == STATE_ON);
+    StdMetrics.ms_v_env_on->SetValue(poll_state == STATE_ON);
+
+    //
+    // Handle polling state change
+    //
+
+    if (poll_state != m_poll_state) {
+      ESP_LOGI(TAG,
+        "PollerStateTicker: [%s] charge_state=%02x => PollState %d->%d",
+        car_online ? "online" : "offline", charge_state, m_poll_state, poll_state);
+    }
+
+    if (poll_state == STATE_CHARGING)
+    {
+      if (m_poll_state != STATE_CHARGING) {
+        // Charge started:
+        StdMetrics.ms_v_door_chargeport->SetValue(true);
+        StdMetrics.ms_v_charge_pilot->SetValue(true);
+        StdMetrics.ms_v_charge_inprogress->SetValue(true);
+        StdMetrics.ms_v_charge_substate->SetValue("onrequest");
+        StdMetrics.ms_v_charge_state->SetValue("charging");
+        // Reset charge kWh
+        StandardMetrics.ms_v_charge_kwh->SetValue(0);
+        // Reset trip values
+        if (m_reset_trip) {
+          StandardMetrics.ms_v_bat_energy_recd->SetValue(0);
+          StandardMetrics.ms_v_bat_energy_used->SetValue(0);
+          mt_pos_odometer_start->SetValue(StandardMetrics.ms_v_pos_odometer->AsFloat());
+          StandardMetrics.ms_v_pos_trip->SetValue(0);
+        }
+        PollSetState(STATE_CHARGING);
+      }
+    }
+    else
+    {
+      if (m_poll_state == STATE_CHARGING) {
+        // Charge stopped:
+        StdMetrics.ms_v_charge_pilot->SetValue(false);
+        StdMetrics.ms_v_charge_inprogress->SetValue(false);
+        int soc = StdMetrics.ms_v_bat_soc->AsInt();
+        if (soc >= 99) {
+          StdMetrics.ms_v_charge_substate->SetValue("stopped");
+          StdMetrics.ms_v_charge_state->SetValue("done");
+        } else {
+          StdMetrics.ms_v_charge_substate->SetValue("interrupted");
+          StdMetrics.ms_v_charge_state->SetValue("stopped");
+        }
+      }
+    }
+
+    if (poll_state == STATE_ON)
+    {
+      if (m_poll_state != STATE_ON) {
+        // Switched on:
+        StdMetrics.ms_v_door_chargeport->SetValue(false);
+        StdMetrics.ms_v_charge_substate->SetValue("");
+        StdMetrics.ms_v_charge_state->SetValue("");
+        // Reset trip values
+        if (!m_reset_trip) {
+          StandardMetrics.ms_v_bat_energy_recd->SetValue(0);
+          StandardMetrics.ms_v_bat_energy_used->SetValue(0);
+          mt_pos_odometer_start->SetValue(StandardMetrics.ms_v_pos_odometer->AsFloat());
+          StandardMetrics.ms_v_pos_trip->SetValue(0);
+        }
+        PollSetState(STATE_ON);
+      }
+    }
+
+    if (poll_state == STATE_OFF)
+    {
+      if (m_poll_state != STATE_OFF) {
+        // Switched off:
+        StdMetrics.ms_v_bat_current->SetValue(0);
+        StdMetrics.ms_v_bat_power->SetValue(0);
+        PollSetState(STATE_OFF);
+        if (StandardMetrics.ms_v_pos_trip->AsFloat(0) > 0.1)
+          NotifyTrip();
+      }
+    }
+  }
 }
 
 /**
@@ -870,6 +938,14 @@ void OvmsVehicleRenaultZoe::IncomingEVC(uint16_t type, uint16_t pid, const char*
       //StandardMetrics.ms_v_bat_soc->SetValue((float) CAN_UINT(0)*2/100, Percentage);
       break;
     }
+    case 0x2003: {  // Vehicle speed (ZOE PH2)
+      StandardMetrics.ms_v_pos_speed->SetValue((float) CAN_UINT(0) * 0.01f);
+      break;
+    }
+    case 0x2005: {  // Battery voltage (ZOE PH2)
+      mt_aux_12v_voltage->SetValue((float) CAN_UINT(0) * 0.01f);
+      break;
+    }
     case 0x2006: {			// Odometer (Total Vehicle Distance)
       StandardMetrics.ms_v_pos_odometer->SetValue((float) CAN_UINT24(0), Kilometers);
       break;
@@ -880,6 +956,13 @@ void OvmsVehicleRenaultZoe::IncomingEVC(uint16_t type, uint16_t pid, const char*
       } else {
         car_on(false);
       }
+      break;
+    }
+    case 0x20DE: { // StandardMetrics.ms_v_bat_current->SetValue((float(CAN_UINT(0))-32640) * 0.03125f)
+      StandardMetrics.ms_v_env_temp->SetValue((float(CAN_UINT(0))-2730) * 0.1f);
+      break;
+    }
+    case 0x29FD: {  // Battery current (ZOE PH2)
       break;
     }
     case 0x3203: {
@@ -923,11 +1006,15 @@ void OvmsVehicleRenaultZoe::IncomingEVC(uint16_t type, uint16_t pid, const char*
  */
 void OvmsVehicleRenaultZoe::IncomingBCB(uint16_t type, uint16_t pid, const char* data, uint16_t len) {
 	switch (pid) {
+    case 0x5017: {
+      mt_charge_state->SetValue(CAN_BYTE(0));
+      break;
+    }
     case 0x504A: {
       // 793,24,39,1,20000,0,W,22504A,62504A,ff\n" // Mains active power consumed
       if (IsKangoo()) mt_main_power_consumed->SetValue((float(CAN_UINT(0)-20000)/1000));
       break;
-    }        
+    }
     case 0x5063: {
       // 793,24,31,1,0,0,,225063,625063,ff\n"
       // Supervisor state,0:Init;1:Wait;2:ClosingS2;3:InitType;4:InitLkg;5:InitChg;6:Charge;7:ZeroAmpMode;8:EndOfChg;9:OpeningS2;10:ReadyToSleep;11:EmergencyStop;12:InitChargeDF;13:OCPStop;14:WaitS2
@@ -999,7 +1086,7 @@ void OvmsVehicleRenaultZoe::IncomingLBC(uint16_t type, uint16_t pid, const char*
       break;
     }
     case 0x04: {
-      if (IsZoe()) {
+      if (IsZoePh1()) {
         for(int i=2; i<36; i+=3){
           BmsSetCellTemperature( (i-2)/3, (INT)CAN_BYTE(i)-40 );
           //ESP_LOGD(TAG, "temp %d - %d", (i-2)/3, (INT)CAN_BYTE(i)-40);
@@ -1027,6 +1114,25 @@ void OvmsVehicleRenaultZoe::IncomingLBC(uint16_t type, uint16_t pid, const char*
         float cell = (float)CAN_UINT(i)/1000;
         BmsSetCellVoltage((i/2)+62, cell);
       }
+      break;
+    }
+    case 0x9001: { // rSOC
+      break;
+    }
+    case 0x9002: { // SOC
+      StandardMetrics.ms_v_bat_soc->SetValue(CAN_UINT(0) * 0.01f);
+      break;
+    }
+    case 0x9003: { // SOH
+      StandardMetrics.ms_v_bat_soh->SetValue(CAN_UINT(0) * 0.01f);
+      break;
+    }
+    case 0x9006: {
+      StandardMetrics.ms_v_bat_voltage->SetValue(CAN_UINT32(0) * 0.0009765625f);
+      break;
+    }
+    case 0x9257: {
+      StandardMetrics.ms_v_bat_current->SetValue((float(CAN_UINT(0))-32640) * 0.03125f);
       break;
     }
     default: {
@@ -1123,15 +1229,16 @@ void OvmsVehicleRenaultZoe::car_on(bool isOn) {
 }
 
 void OvmsVehicleRenaultZoe::Ticker1(uint32_t ticker) {
-  if (m_candata_timer > 0) {
-    if (--m_candata_timer == 0) {
-      // Car has gone to sleep
-      ESP_LOGI(TAG,"Car has gone to sleep (CAN bus timeout)");
-      mt_bus_awake->SetValue(false);
-      //StandardMetrics.ms_v_env_awake->SetValue(false);
-      StandardMetrics.ms_v_bat_12v_current->SetValue(0);
-      m_candata_poll = 0;
-      POLLSTATE_OFF;
+  if (IsZoePh1() || IsKangoo()) {
+    if (m_candata_timer > 0) {
+      if (--m_candata_timer == 0) {
+        // Car has gone to sleep
+        ESP_LOGI(TAG,"Car has gone to sleep (CAN bus timeout)");
+        mt_bus_awake->SetValue(false);
+        StandardMetrics.ms_v_bat_12v_current->SetValue(0);
+        m_candata_poll = 0;
+        POLLSTATE_OFF;
+      }
     }
   }
   

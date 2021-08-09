@@ -65,7 +65,7 @@ OvmsVehicle::vehicle_command_t OvmsVehicleRenaultZoe::CommandWakeup() {
   
   ESP_LOGI(TAG, "Send Wakeup Command");
   
-  if (IsZoe()) {
+  if (IsZoePh1()) {
     uint8_t data[8] = {0xf1, 0x04, 0x1f, 0xc5, 0x35, 0xfe, 0x65, 0x08};
     
     canbus *obd;

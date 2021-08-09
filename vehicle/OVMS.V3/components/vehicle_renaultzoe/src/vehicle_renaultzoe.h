@@ -73,9 +73,13 @@ class OvmsVehicleRenaultZoe : public OvmsVehicle {
     ~OvmsVehicleRenaultZoe();
 		static OvmsVehicleRenaultZoe* GetInstance(OvmsWriter* writer=NULL);
 		void IncomingFrameCan1(CAN_frame_t* p_frame);
+    void PollerStateTicker();
 		void IncomingPollReply(canbus* bus, uint16_t type, uint16_t pid, uint8_t* data, uint8_t length, uint16_t remain);
 
 	protected:
+    void ZoePH1Init();
+    void ZoePH2Init();
+    void KangooInit();
 		void IncomingEPS(uint16_t type, uint16_t pid, const char* data, uint16_t len);
 		void IncomingEVC(uint16_t type, uint16_t pid, const char* data, uint16_t len);
 		void IncomingBCB(uint16_t type, uint16_t pid, const char* data, uint16_t len);
@@ -96,6 +100,8 @@ class OvmsVehicleRenaultZoe : public OvmsVehicle {
     OvmsMetricBool   *mt_bus_awake;           // can-bus awake status
     OvmsMetricFloat  *mt_available_energy;    // Available Energy
     OvmsMetricFloat  *mt_main_power_consumed; // Mains active power consumed
+    OvmsMetricInt    *mt_charge_state;
+    OvmsMetricFloat  *mt_aux_12v_voltage; 
     
     // Rnault Kangoo metrics
     OvmsMetricFloat  *mt_heatwater_temp;      // Heat Water Temp
@@ -144,11 +150,14 @@ class OvmsVehicleRenaultZoe : public OvmsVehicle {
     string zoe_obd_rxbuf;
   
   public:
-    bool IsZoe() {
+    bool IsZoePh1() {
       return m_vehicle_type == 0;
     }
     bool IsKangoo() {
       return m_vehicle_type == 1;
+    }
+    bool IsZoePh2() {
+      return m_vehicle_type == 2;
     }
 };
 
