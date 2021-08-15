@@ -1683,6 +1683,15 @@ void OvmsVehicleNissanLeaf::Ticker10(uint32_t ticker)
     {
     StandardMetrics.ms_v_env_awake->SetValue(false);
     }
+  
+  // assume charge port has been closed 2min after pilot signal finished
+  if (StandardMetrics.ms_v_charge_pilot->IsStale() && StandardMetrics.ms_v_gen_pilot->IsStale() && StandardMetrics.ms_v_door_chargeport->AsBool())
+    {
+    std::string str = StandardMetrics.ms_v_charge_substate->AsString();
+    if      (str == "timerwait") ;
+    else if (str == "powerwait") ;
+    else StandardMetrics.ms_v_door_chargeport->SetValue(false);
+    }
   }
 
 /**
