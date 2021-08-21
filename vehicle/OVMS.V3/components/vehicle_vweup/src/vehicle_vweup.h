@@ -120,6 +120,7 @@ public:
 
 protected:
   void Ticker1(uint32_t ticker);
+  void Ticker10(uint32_t ticker);
   void Ticker60(uint32_t ticker);
 
 public:
@@ -135,6 +136,7 @@ public:
 
 protected:
   int GetNotifyChargeStateDelay(const char *state);
+  void NotifiedVehicleChargeState(const char* s);
   int CalcChargeTime(float capacity, float max_pwr, int from_soc, int to_soc);
   void UpdateChargeTimes();
 
@@ -210,6 +212,9 @@ private:
   double m_charge_kwh_grid;
   int m_chargestart_ticker;
   int m_chargestop_ticker;
+  float m_chargestate_lastsoc;
+  int m_timermode_ticker;
+  bool m_timermode_new;
 
 
   // --------------------------------------------------------------------------
@@ -313,7 +318,6 @@ protected:
 protected:
   void UpdateChargePower(float power_kw);
   void UpdateChargeCap(bool charging);
-  void UpdateChargeParams();
 
 public:
   static void ShellPollControl(int verbosity, OvmsWriter* writer, OvmsCommand* cmd, int argc, const char* const* argv);
