@@ -107,6 +107,9 @@ const OvmsVehicle::poll_pid_t vweup_polls[] = {
 // Specific PIDs for gen1 model (before year 2020)
 //
 const OvmsVehicle::poll_pid_t vweup_gen1_polls[] = {
+  // VWUP_MOT_ELEC_GEAR not available
+  {VWUP_MOT_ELEC, UDS_READ, VWUP_MOT_ELEC_DRIVEMODE,        {  0,  0,  0,  5}, 1, ISOTP_STD},
+
   {VWUP_CHG,      UDS_READ, VWUP1_CHG_AC_U,                 {  0,  0,  3,  0}, 1, ISOTP_STD},
   {VWUP_CHG,      UDS_READ, VWUP1_CHG_AC_I,                 {  0,  0,  3,  0}, 1, ISOTP_STD},
   // Same tick & order important of above 2: VWUP_CHG_AC_I calculates the AC power
@@ -120,6 +123,9 @@ const OvmsVehicle::poll_pid_t vweup_gen1_polls[] = {
 // Specific PIDs for gen2 model (from year 2020)
 //
 const OvmsVehicle::poll_pid_t vweup_gen2_polls[] = {
+  {VWUP_MOT_ELEC, UDS_READ, VWUP_MOT_ELEC_GEAR,             {  0,  0,  0,  2}, 1, ISOTP_STD},
+  {VWUP_MOT_ELEC, UDS_READ, VWUP_MOT_ELEC_DRIVEMODE,        {  0,  0,  0,  5}, 1, ISOTP_STD},
+
   {VWUP_CHG,      UDS_READ, VWUP2_CHG_AC_U,                 {  0,  0,  3,  0}, 1, ISOTP_STD},
   {VWUP_CHG,      UDS_READ, VWUP2_CHG_AC_I,                 {  0,  0,  3,  0}, 1, ISOTP_STD},
   // Same tick & order important of above 2: VWUP_CHG_AC_I calculates the AC power
@@ -253,6 +259,7 @@ void OvmsVehicleVWeUp::OBDInit()
     m_poll_vector.insert(m_poll_vector.end(), {
       {VWUP_MOT_ELEC, UDS_READ, VWUP_MOT_ELEC_SPEED,    {  0,  0,  0,  1}, 1, ISOTP_STD},
       // … speed interval = VWUP_BAT_MGMT_U & _I to get a consistent consumption calculation
+      {VWUP_MOT_ELEC, UDS_READ, VWUP_MOT_ELEC_STATE,    {  0,  0,  0,  2}, 1, ISOTP_STD},
     });
   }
 
@@ -440,19 +447,9 @@ void OvmsVehicleVWeUp::PollerStateTicker()
   // - v_env_awake = car has been switched on by the user (yeah, confusing name, may be changed itf)
   StdMetrics.ms_v_env_awake->SetValue(car_online && lv_pwrstate > 12);
 
-  // - v_env_on = "ignition" / drivable mode: this is currently still a heuristical guess;
-  //      set when ON & DC converter puts out more than 14V, reset when not ON
-  //      (TODO: find proper PID)
+  // - v_env_on = "ignition" / drivable mode: clear if not on, in case we missed the PID change:
   if (poll_state != VWEUP_ON) {
     StdMetrics.ms_v_env_on->SetValue(false);
-  }
-  else if (StdMetrics.ms_v_env_on->AsBool() == false && dcdc_voltage > 14) {
-    // TODO: get real charge port state
-    // For now, we assume the port has been closed when the car is started:
-    StdMetrics.ms_v_door_chargeport->SetValue(false);
-    StdMetrics.ms_v_charge_substate->SetValue("");
-    StdMetrics.ms_v_charge_state->SetValue("");
-    StdMetrics.ms_v_env_on->SetValue(true);
   }
 
   //
@@ -741,6 +738,7 @@ void OvmsVehicleVWeUp::IncomingPollReply(canbus *bus, uint16_t type, uint16_t pi
       // This SOC only losely correlates to the instrument cluster SOC; on high SOC
       // it lowers faster initially, but on low SOC it stays higher.
       // Data analysis indicates this SOC is mainly coulomb counting based.
+      // MFD range capacity correlates linearly to this SOC.
       if (PollReply.FromUint16("VWUP_MOT_ELEC_SOC_NORM", value)) {
         float soc = value / 100;
         VALUE_LOG(TAG, "VWUP_MOT_ELEC_SOC_NORM=%f => %f", value, soc);
@@ -799,9 +797,12 @@ void OvmsVehicleVWeUp::IncomingPollReply(canbus *bus, uint16_t type, uint16_t pi
         //  The value may include a battery temperature compensation, so may change
         //  from summer to winter, this isn't known yet. There also may be a separate
         //  actual SOH reading available (to be discovered).
-        // Value resolution is at only 0.1 kWh, also capacity is artificially reduced by the
+
+        // Analysis of the SOC monitor log indicates this capacity relates to the engine ECU SOC:
+        float soc_fct = MotElecSoCNorm->AsFloat() / 100;
+
+        // Value resolution is at only 0.1 kWh, also capacity seems artificially reduced by the
         //  car below 30% SOC, so we limit the calculation to…
-        float soc_fct = StdMetrics.ms_v_bat_soc->AsFloat() / 100;
         if (energy_avail > 3.0 && soc_fct >= 0.30)
         {
           float energy_full = energy_avail / soc_fct;
@@ -1153,6 +1154,36 @@ void OvmsVehicleVWeUp::IncomingPollReply(canbus *bus, uint16_t type, uint16_t pi
         VALUE_LOG(TAG, "VWUP_MOT_ELEC_POWER_MOT=%f => %f", value, StdMetrics.ms_v_inv_power->AsFloat());
       }
       break;
+
+    case VWUP_MOT_ELEC_STATE:
+      if (PollReply.FromUint8("VWUP_MOT_ELEC_STATE", ivalue) && ivalue != 255) {
+        VALUE_LOG(TAG, "VWUP_MOT_ELEC_STATE=%d", ivalue);
+        // 1/2=booting, 3=ready, 4=ignition on, 7=switched off
+        if (ivalue != 4) {
+          StdMetrics.ms_v_env_on->SetValue(false);
+        }
+        else if (StdMetrics.ms_v_env_on->SetValue(true)) {
+          // TODO: get real charge port state
+          // For now, we assume the port has been closed when the car is started:
+          StdMetrics.ms_v_door_chargeport->SetValue(false);
+          StdMetrics.ms_v_charge_substate->SetValue("");
+          StdMetrics.ms_v_charge_state->SetValue("");
+        }
+      }
+      break;
+    case VWUP_MOT_ELEC_GEAR:
+      if (PollReply.FromInt8("VWUP_MOT_ELEC_GEAR", ivalue)) {
+        VALUE_LOG(TAG, "VWUP_MOT_ELEC_GEAR=%d", ivalue);
+        StdMetrics.ms_v_env_gear->SetValue(ivalue);
+      }
+      break;
+    case VWUP_MOT_ELEC_DRIVEMODE:
+      if (PollReply.FromUint8("VWUP_MOT_ELEC_DRIVEMODE", ivalue)) {
+        VALUE_LOG(TAG, "VWUP_MOT_ELEC_DRIVEMODE=%d", ivalue);
+        StdMetrics.ms_v_env_drivemode->SetValue(ivalue);
+      }
+      break;
+
     case VWUP_BAT_MGMT_ODOMETER:
       if (PollReply.FromUint24("VWUP_BAT_MGMT_ODOMETER", value, 1) && value < 10000000) {
         StdMetrics.ms_v_pos_odometer->SetValue(value);
