@@ -644,7 +644,7 @@ void OvmsVehicle::VehicleTicker1(std::string event, void* data)
   if ((m_ticker % 10)==0)
     {
     // Check MINSOC
-    int soc = (int)StandardMetrics.ms_v_bat_soc->AsFloat();
+    int soc = (int) ceil(StandardMetrics.ms_v_bat_soc->AsFloat());
     m_minsoc = MyConfig.GetParamValueInt("vehicle", "minsoc", 0);
     if (m_minsoc <= 0)
       {
@@ -730,6 +730,13 @@ void OvmsVehicle::NotifyChargeStart()
   StringWriter buf(200);
   CommandStat(COMMAND_RESULT_NORMAL, &buf);
   MyNotify.NotifyString("info","charge.started",buf.c_str());
+  }
+
+void OvmsVehicle::NotifyChargeTopOff()
+  {
+  StringWriter buf(200);
+  CommandStat(COMMAND_RESULT_NORMAL, &buf);
+  MyNotify.NotifyString("info","charge.toppingoff",buf.c_str());
   }
 
 void OvmsVehicle::NotifyHeatingStart()
@@ -1308,6 +1315,23 @@ void OvmsVehicle::MetricModified(OvmsMetric* metric)
       NotifiedVehicleAlarmOff();
       }
     }
+  else if (metric == StandardMetrics.ms_v_env_gear)
+    {
+    int gear = StandardMetrics.ms_v_env_gear->AsInt();
+    if (gear < 0)
+      MyEvents.SignalEvent("vehicle.gear.reverse", NULL);
+    else if (gear > 0)
+      MyEvents.SignalEvent("vehicle.gear.forward", NULL);
+    else
+      MyEvents.SignalEvent("vehicle.gear.neutral", NULL);
+    NotifiedVehicleGear(gear);
+    }
+  else if (metric == StandardMetrics.ms_v_env_drivemode)
+    {
+    std::string event = "vehicle.drivemode." + StandardMetrics.ms_v_env_drivemode->AsString();
+    MyEvents.SignalEvent(event, NULL);
+    NotifiedVehicleDrivemode(StandardMetrics.ms_v_env_drivemode->AsInt());
+    }
   else if (metric == StandardMetrics.ms_v_charge_mode)
     {
     std::string m = metric->AsString();
@@ -1493,7 +1517,7 @@ void OvmsVehicle::NotifyChargeState()
   else if (m == "charging")
     NotifyChargeStart();
   else if (m == "topoff")
-    NotifyChargeStart();
+    NotifyChargeTopOff();
   else if (m == "heating")
     NotifyHeatingStart();
 
