@@ -64,7 +64,7 @@ class OvmsServerV2 : public OvmsServer
   protected:
     void ProcessServerMsg();
     void ProcessCommand(const char* payload);
-    void Transmit(const std::string& message);
+    bool Transmit(const std::string& message);
 
   protected:
     void TransmitMsgStat(bool always = false);
@@ -95,6 +95,7 @@ class OvmsServerV2 : public OvmsServer
     void NetmanInit(std::string event, void* data);
     void NetmanStop(std::string event, void* data);
     void Ticker1(std::string event, void* data);
+    void RequestUpdate(bool txall);
 
   public:
     enum State

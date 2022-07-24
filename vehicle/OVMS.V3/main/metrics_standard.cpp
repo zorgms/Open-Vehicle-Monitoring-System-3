@@ -55,6 +55,7 @@ MetricsStandard::MetricsStandard()
   ms_m_net_mdm_network = new OvmsMetricString(MS_N_MDM_NETWORK, SM_STALE_MAX);
   ms_m_net_mdm_iccid = new OvmsMetricString(MS_N_MDM_ICCID, SM_STALE_MAX);
   ms_m_net_mdm_model = new OvmsMetricString(MS_N_MDM_MODEL, SM_STALE_MAX);
+  ms_m_net_mdm_mode = new OvmsMetricString(MS_N_MDM_MODE, SM_STALE_MAX);
 
 #ifdef CONFIG_OVMS_COMP_MAX7317
   ms_m_egpio_input = new OvmsMetricBitset<10,0>(MS_M_EGPIO_INPUT, SM_STALE_MAX);
@@ -256,6 +257,8 @@ MetricsStandard::MetricsStandard()
   ms_v_pos_gpsmode = new OvmsMetricString(MS_V_POS_GPSMODE, SM_STALE_MIN);
   ms_v_pos_gpshdop = new OvmsMetricFloat(MS_V_POS_GPSHDOP, SM_STALE_MIN);
   ms_v_pos_satcount= new OvmsMetricInt(MS_V_POS_SATCOUNT, SM_STALE_MIN);
+  ms_v_pos_gpssq = new OvmsMetricInt(MS_V_POS_GPSSQ, SM_STALE_MIN, Percentage);
+  ms_v_pos_gpstime = new OvmsMetricInt(MS_V_POS_GPSTIME, SM_STALE_MIN, Seconds);
   ms_v_pos_latitude = new OvmsMetricFloat(MS_V_POS_LATITUDE, SM_STALE_MIN, Other, true);
   ms_v_pos_longitude = new OvmsMetricFloat(MS_V_POS_LONGITUDE, SM_STALE_MIN, Other, true);
   ms_v_pos_location = new OvmsMetricString(MS_V_POS_LOCATION, SM_STALE_MID);
