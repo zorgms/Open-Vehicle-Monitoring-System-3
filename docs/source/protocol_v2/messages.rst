@@ -185,12 +185,15 @@ This message is sent <cartoserver> "C", or <servertoapp> "s", and transmits the 
 
 <data> is comma-separated list of:
 
-* Car firmware version
-* Car VIN
-* GSM signal level
+* OVMS firmware version
+* VIN (vehicle identification number)
+* Current network signal quality (Wifi / GSM, in SQ units)
 * Write-enabled firmware (0=read-only, 1=write-enabled)
-* Car type (TR=Tesla Roadster, others may follow)
-* GSM lock
+* Vehicle type code (e.g. ``TR`` = Tesla Roadster, see command output ``vehicle list``)
+* Current network name (Wifi SSID / GSM provider)
+* Distance to next scheduled maintenance/service [km]
+* Time to next scheduled maintenance/service [seconds]
+* OVMS hardware version
 
 --------------------------------
 Server firmware message 0x66 "f"
@@ -435,6 +438,7 @@ This message is sent <cartoserver> "C" and transmits the last known location of 
 * GPS satellite count
 * GPS HDOP (see below)
 * GPS speed (in distance units per hour)
+* GPS signal quality (%)
 
 **GPS mode indicator**: this shows the NMEA receiver mode. If using the SIM5360 modem for GPS, this 
 is a two character string. The first character represents the GPS receiver mode, the second the GLONASS 
@@ -458,6 +462,11 @@ The lower the value, the higher the precision. Values up to 2 mean high precisio
 If the value is higher than 20, coordinates may be off by 300 meters from the actual position.
 
 See https://en.wikipedia.org/wiki/Dilution_of_precision_(navigation) for further details.
+
+**GPS signal quality**: this is a normalized quality / reliability level (0…100%) derived from lock
+status, satellite count and HDOP (if available). Levels below 30% mean the position should not be
+depended on, from 50% up mean good, from 80% up excellent.
+
 
 ---------------------------------
 Car Capabilities message 0x56 "V"

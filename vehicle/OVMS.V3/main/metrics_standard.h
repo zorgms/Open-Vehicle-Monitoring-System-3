@@ -56,6 +56,7 @@
 #define MS_N_MDM_NETREG             "m.net.mdm.netreg"
 #define MS_N_MDM_NETWORK            "m.net.mdm.network"
 #define MS_N_MDM_SQ                 "m.net.mdm.sq"
+#define MS_N_MDM_MODE               "m.net.mdm.mode"
 #define MS_N_WIFI_NETWORK           "m.net.wifi.network"
 #define MS_N_WIFI_SQ                "m.net.wifi.sq"
 
@@ -229,6 +230,8 @@
 #define MS_V_POS_GPSMODE            "v.p.gpsmode"
 #define MS_V_POS_GPSHDOP            "v.p.gpshdop"
 #define MS_V_POS_SATCOUNT           "v.p.satcount"
+#define MS_V_POS_GPSSQ              "v.p.gpssq"
+#define MS_V_POS_GPSTIME            "v.p.gpstime"
 #define MS_V_POS_LATITUDE           "v.p.latitude"
 #define MS_V_POS_LONGITUDE          "v.p.longitude"
 #define MS_V_POS_LOCATION           "v.p.location"
@@ -287,8 +290,9 @@ class MetricsStandard
     OvmsMetricString* ms_m_net_mdm_netreg;                // Modem network registration state
     OvmsMetricString* ms_m_net_mdm_network;               // Modem network operator
     OvmsMetricFloat*  ms_m_net_mdm_sq;                    // Modem network signal quality [dbm]
-    OvmsMetricString* ms_m_net_mdm_iccid;
-    OvmsMetricString* ms_m_net_mdm_model;
+    OvmsMetricString* ms_m_net_mdm_iccid;                 // ICCID of SIM card in modem
+    OvmsMetricString* ms_m_net_mdm_model;                 // Model of modem discovered
+    OvmsMetricString* ms_m_net_mdm_mode;                  // Cellular connection mode and status
 
 #ifdef CONFIG_OVMS_COMP_MAX7317
     OvmsMetricBitset<10,0>* ms_m_egpio_input;             // EGPIO (MAX7317) input port state (ports 0…9)
@@ -409,7 +413,7 @@ class MetricsStandard
     OvmsMetricInt*     ms_v_gen_time;                     // Duration of generator running [sec]
     OvmsMetricFloat*   ms_v_gen_kwh;                      // Energy sum generated in the running session [kWh]
     OvmsMetricFloat*   ms_v_gen_kwh_grid;                 // Energy sent to grid during running session [kWh]
-    OvmsMetricFloat*   ms_v_gen_kwh_grid_total;           // Energy sent to grid total (life time) [kWh] 
+    OvmsMetricFloat*   ms_v_gen_kwh_grid_total;           // Energy sent to grid total (life time) [kWh]
     OvmsMetricString*  ms_v_gen_mode;                     // TBD
     OvmsMetricBool*    ms_v_gen_timermode;                // True if generator timer enabled
     OvmsMetricInt*     ms_v_gen_timerstart;               // Time generator is due to start
@@ -423,7 +427,7 @@ class MetricsStandard
     OvmsMetricInt*     ms_v_gen_duration_empty;           // Estimated time remaining for full discharge [min]
     OvmsMetricInt*     ms_v_gen_duration_range;           // … for range limit [min]
     OvmsMetricInt*     ms_v_gen_duration_soc;             // … for SOC limit [min]
-    OvmsMetricFloat*   ms_v_gen_temp;                     // Generator temperature [°C] 
+    OvmsMetricFloat*   ms_v_gen_temp;                     // Generator temperature [°C]
 
     //
     // Motor inverter/controller metrics
@@ -489,6 +493,8 @@ class MetricsStandard
     OvmsMetricString* ms_v_pos_gpsmode;                   // <GPS><GLONASS>; N/A/D/E (None/Autonomous/Differential/Estimated)
     OvmsMetricFloat*  ms_v_pos_gpshdop;                   // Horizontal dilution of precision (smaller=better)
     OvmsMetricInt*    ms_v_pos_satcount;
+    OvmsMetricInt*    ms_v_pos_gpssq;                     // GPS signal quality [%] (<30 unusable, >50 good, >80 excellent)
+    OvmsMetricInt*    ms_v_pos_gpstime;                   // Time (UTC) of GPS coordinates [Seconds]
     OvmsMetricFloat*  ms_v_pos_latitude;
     OvmsMetricFloat*  ms_v_pos_longitude;
     OvmsMetricString* ms_v_pos_location;                  // Name of current location if defined

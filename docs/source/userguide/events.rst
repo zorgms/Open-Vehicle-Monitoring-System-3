@@ -58,6 +58,8 @@ egpio.input.<port>.<state>                    EGPIO input port change (port=0…
 egpio.output.<port>.<state>                   EGPIO output port change (port=0…9, state=high/low)
 gps.lock.acquired                             GPS lock has been acquired
 gps.lock.lost                                 GPS lock has been lost
+gps.sq.bad                                    GPS position is now unreliable
+gps.sq.good                                   GPS position is now reliable
 housekeeping.init                             Housekeeping has initialised
 location.alert.flatbed.moved                  GPS movement of parked vehicle detected
 location.enter.<name>               <name>    The specified geolocation has been entered
@@ -75,6 +77,7 @@ network.wifi.down                             WIFI network is down
 network.wifi.sta.bad                          WIFI client has bad signal level
 network.wifi.sta.good                         WIFI client has good signal level
 network.wifi.up                               WIFI network is up
+notify.<type>.<subtype>                       An info / alert / error notification is sent
 retools.cleared.all                           RE frame log has been cleared
 retools.cleared.changed                       RE frame change flags cleared
 retools.cleared.discovered                    RE frame discovery flags cleared
@@ -111,6 +114,7 @@ server.web.socket.opened            <cnt>     Web server has a new websocket cli
 system.modem.down                             Modem has been disconnected
 system.modem.gotgps                           Modem GPS has obtained lock
 system.modem.gotip                            Modem received IP address from DATA
+system.modem.installed                        Modem type has been identified, driver installed
 system.modem.lostgps                          Modem GPS has lost lock
 system.modem.muxstart                         Modem MUX has started
 system.modem.netdeepsleep                     Modem is deep sleeping DATA network

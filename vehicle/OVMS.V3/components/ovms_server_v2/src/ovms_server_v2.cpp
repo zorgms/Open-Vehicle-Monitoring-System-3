@@ -696,17 +696,17 @@ void OvmsServerV2::ProcessCommand(const char* payload)
         *buffer << "MP-0 c" << command << ",1,No command";
       else
         {
-#ifdef CONFIG_OVMS_COMP_MODEM_SIMCOM
+#ifdef CONFIG_OVMS_COMP_CELLULAR
         *buffer << "AT+CUSD=1,\"" << sep+1 << "\",15\r\n";
         extram::string msg = buffer->str();
         buffer->str("");
-        if (MyPeripherals->m_simcom->txcmd(msg.c_str(), msg.length()))
+        if (MyPeripherals->m_cellular_modem->txcmd(msg.c_str(), msg.length()))
           *buffer << "MP-0 c" << command << ",0";
         else
           *buffer << "MP-0 c" << command << ",1,Cannot send command";
-#else // #ifdef CONFIG_OVMS_COMP_MODEM_SIMCOM
+#else // #ifdef CONFIG_OVMS_COMP_CELLULAR
         *buffer << "MP-0 c" << command << ",1,No modem";
-#endif // #ifdef CONFIG_OVMS_COMP_MODEM_SIMCOM
+#endif // #ifdef CONFIG_OVMS_COMP_CELLULAR
         }
       break;
     case 49: // Send raw AT command
@@ -721,11 +721,11 @@ void OvmsServerV2::ProcessCommand(const char* payload)
   delete buffer;
   }
 
-void OvmsServerV2::Transmit(const std::string& message)
+bool OvmsServerV2::Transmit(const std::string& message)
   {
   OvmsMutexLock mg(&m_mgconn_mutex);
   if (!m_mgconn)
-    return;
+    return false;
 
   int len = message.length();
   char* s = new char[(len*2)+4];
@@ -775,6 +775,7 @@ void OvmsServerV2::Transmit(const std::string& message)
 
   delete [] buf;
   delete [] s;
+  return true;
   }
 
 void OvmsServerV2::SetStatus(const char* status, bool fault, State newstate)
@@ -1181,6 +1182,7 @@ void OvmsServerV2::TransmitMsgGPS(bool always)
     StandardMetrics.ms_v_pos_direction->IsModifiedAndClear(MyOvmsServerV2Modifier) |
     StandardMetrics.ms_v_pos_altitude->IsModifiedAndClear(MyOvmsServerV2Modifier) |
     StandardMetrics.ms_v_pos_gpslock->IsModifiedAndClear(MyOvmsServerV2Modifier) |
+    StandardMetrics.ms_v_pos_gpssq->IsModifiedAndClear(MyOvmsServerV2Modifier) |
     StandardMetrics.ms_v_pos_gpsmode->IsModifiedAndClear(MyOvmsServerV2Modifier) |
     StandardMetrics.ms_v_pos_gpshdop->IsModifiedAndClear(MyOvmsServerV2Modifier) |
     StandardMetrics.ms_v_pos_satcount->IsModifiedAndClear(MyOvmsServerV2Modifier) |
@@ -1197,10 +1199,7 @@ void OvmsServerV2::TransmitMsgGPS(bool always)
   if ((!always)&&(!modified)) return;
 
   bool stale =
-    StandardMetrics.ms_v_pos_latitude->IsStale() ||
-    StandardMetrics.ms_v_pos_longitude->IsStale() ||
-    StandardMetrics.ms_v_pos_direction->IsStale() ||
-    StandardMetrics.ms_v_pos_altitude->IsStale();
+    StandardMetrics.ms_v_pos_gpstime->IsStale();
 
   char drivemode[10];
   sprintf(drivemode, "%x", StandardMetrics.ms_v_env_drivemode->AsInt());
@@ -1243,6 +1242,8 @@ void OvmsServerV2::TransmitMsgGPS(bool always)
     << StandardMetrics.ms_v_pos_gpshdop->AsString("0", Native, 1)
     << ","
     << StandardMetrics.ms_v_pos_gpsspeed->AsString("0", units_speed, 1)
+    << ","
+    << StandardMetrics.ms_v_pos_gpssq->AsInt()
     ;
 
   Transmit(buffer.str().c_str());
@@ -1316,7 +1317,7 @@ void OvmsServerV2::TransmitMsgTPMS(bool always)
     << "," << defstale_alert
     ;
   Transmit(buffer.str().c_str());
-  
+
   // Transmit legacy "W" message (fixed four tyres, only pressures & temperatures):
 
   bool stale =
@@ -1366,36 +1367,51 @@ void OvmsServerV2::TransmitMsgTPMS(bool always)
 
 void OvmsServerV2::TransmitMsgFirmware(bool always)
   {
+  // As the signal quality is the only fast changing metric here, and will normally
+  // change continuously +/- 2 even while parking, we check this for an actual value
+  // difference > 2 to the last transmission, so we don't need to retransmit the
+  // -now- comparably huge static info contained here on every signal level change.
+  // TODO: move dynamic network status infos into another message (needs App updates)
+  static int last_m_net_sq = 0;
+  int curr_m_net_sq = StandardMetrics.ms_m_net_sq->AsInt(0, sq);
+
   m_now_firmware = false;
 
   bool modified =
     StandardMetrics.ms_m_version->IsModifiedAndClear(MyOvmsServerV2Modifier) |
     StandardMetrics.ms_v_vin->IsModifiedAndClear(MyOvmsServerV2Modifier) |
-    StandardMetrics.ms_m_net_sq->IsModifiedAndClear(MyOvmsServerV2Modifier) |
+    (std::abs(curr_m_net_sq - last_m_net_sq) > 2) |
     StandardMetrics.ms_v_type->IsModifiedAndClear(MyOvmsServerV2Modifier) |
     StandardMetrics.ms_m_net_provider->IsModifiedAndClear(MyOvmsServerV2Modifier) |
     StandardMetrics.ms_v_env_service_range->IsModifiedAndClear(MyOvmsServerV2Modifier) |
-    StandardMetrics.ms_v_env_service_time->IsModifiedAndClear(MyOvmsServerV2Modifier);
+    StandardMetrics.ms_v_env_service_time->IsModifiedAndClear(MyOvmsServerV2Modifier) |
+    StandardMetrics.ms_m_hardware->IsModifiedAndClear(MyOvmsServerV2Modifier);
 
   // Quick exit if nothing modified
   if ((!always)&&(!modified)) return;
 
+  last_m_net_sq = curr_m_net_sq;
+
   extram::ostringstream buffer;
   buffer
     << "MP-0 F"
-    << StandardMetrics.ms_m_version->AsString("")
+    << mp_encode(StandardMetrics.ms_m_version->AsString(""))
     << ","
-    << StandardMetrics.ms_v_vin->AsString("")
+    << mp_encode(StandardMetrics.ms_v_vin->AsString(""))
     << ","
     << StandardMetrics.ms_m_net_sq->AsString("0",sq)
-    << ",1,"
+    << ","
+    << MyConfig.GetParamValue("vehicle", "canwrite", "0")
+    << ","
     << StandardMetrics.ms_v_type->AsString("")
     << ","
-    << StandardMetrics.ms_m_net_provider->AsString("")
+    << mp_encode(StandardMetrics.ms_m_net_provider->AsString(""))
     << ","
     << StandardMetrics.ms_v_env_service_range->AsString("-1", Kilometers, 0)
     << ","
     << StandardMetrics.ms_v_env_service_time->AsString("-1", Seconds, 0)
+    << ","
+    << mp_encode(StandardMetrics.ms_m_hardware->AsString(""))
     ;
 
   Transmit(buffer.str().c_str());
@@ -1595,9 +1611,15 @@ void OvmsServerV2::TransmitNotifyInfo()
     buffer
       << "MP-0 PI"
       << mp_encode(e->GetValue());
-    Transmit(buffer.str().c_str());
-
-    info->MarkRead(MyOvmsServerV2Reader, e);
+    if (Transmit(buffer.str().c_str()))
+      {
+      info->MarkRead(MyOvmsServerV2Reader, e);
+      }
+    else
+      {
+      m_pending_notify_info = true;
+      return;
+      }
     }
   }
 
@@ -1619,9 +1641,15 @@ void OvmsServerV2::TransmitNotifyError()
     buffer
       << "MP-0 PE"
       << e->GetValue(); // no mp_encode; payload structure "<vehicletype>,<errorcode>,<errordata>"
-    Transmit(buffer.str().c_str());
-
-    alert->MarkRead(MyOvmsServerV2Reader, e);
+    if (Transmit(buffer.str().c_str()))
+      {
+      alert->MarkRead(MyOvmsServerV2Reader, e);
+      }
+    else
+      {
+      m_pending_notify_error = true;
+      return;
+      }
     }
   }
 
@@ -1643,9 +1671,15 @@ void OvmsServerV2::TransmitNotifyAlert()
     buffer
       << "MP-0 PA"
       << mp_encode(e->GetValue());
-    Transmit(buffer.str().c_str());
-
-    alert->MarkRead(MyOvmsServerV2Reader, e);
+    if (Transmit(buffer.str().c_str()))
+      {
+      alert->MarkRead(MyOvmsServerV2Reader, e);
+      }
+    else
+      {
+      m_pending_notify_alert = true;
+      return;
+      }
     }
   }
 
@@ -1689,7 +1723,13 @@ void OvmsServerV2::TransmitNotifyData()
       << -((int)(now - e->m_created) / 1000)
       << ","
       << msg;
-    Transmit(buffer.str().c_str());
+    if (!Transmit(buffer.str().c_str()))
+      {
+      m_pending_notify_data = true;
+      m_pending_notify_data_last = 0;
+      return;
+      }
+
     m_pending_notify_data_last = e->m_id;
 
     // be nice to other tasks, the network & the server:
@@ -1723,6 +1763,14 @@ void OvmsServerV2::MetricModified(OvmsMetric* metric)
 
   if (StandardMetrics.ms_s_v2_peers->AsInt() == 0)
     return;
+
+  if ((metric == StandardMetrics.ms_v_vin)||
+      (metric == StandardMetrics.ms_v_type)||
+      (metric == StandardMetrics.ms_m_net_provider)||
+      (metric == StandardMetrics.ms_m_hardware))
+    {
+    m_now_firmware = true;
+    }
 
   if ((metric == StandardMetrics.ms_v_charge_climit)||
       (metric == StandardMetrics.ms_v_charge_limit_range)||
@@ -1810,8 +1858,7 @@ bool OvmsServerV2::IncomingNotification(OvmsNotifyType* type, OvmsNotifyEntry* e
     buffer
       << "MP-0 PI"
       << mp_encode(entry->GetValue());
-    Transmit(buffer.str().c_str());
-    return true; // Mark it as read, as we've managed to send it
+    return Transmit(buffer.str().c_str()); // Mark it as read if we've managed to send it
     }
   else if (strcmp(type->m_name,"error")==0)
     {
@@ -1825,8 +1872,7 @@ bool OvmsServerV2::IncomingNotification(OvmsNotifyType* type, OvmsNotifyEntry* e
     buffer
       << "MP-0 PE"
       << entry->GetValue(); // no mp_encode; payload structure "<vehicletype>,<errorcode>,<errordata>"
-    Transmit(buffer.str().c_str());
-    return true; // Mark it as read, as we've managed to send it
+    return Transmit(buffer.str().c_str()); // Mark it as read if we've managed to send it
     }
   else if (strcmp(type->m_name,"alert")==0)
     {
@@ -1840,8 +1886,7 @@ bool OvmsServerV2::IncomingNotification(OvmsNotifyType* type, OvmsNotifyEntry* e
     buffer
       << "MP-0 PA"
       << mp_encode(entry->GetValue());
-    Transmit(buffer.str().c_str());
-    return true; // Mark it as read, as we've managed to send it
+    return Transmit(buffer.str().c_str()); // Mark it as read if we've managed to send it
     }
   else if (strcmp(type->m_name,"data")==0)
     {
@@ -2002,6 +2047,25 @@ void OvmsServerV2::Ticker1(std::string event, void* data)
       m_pending_notify_data_last = 0;
       TransmitNotifyData();
       }
+    }
+  }
+
+void OvmsServerV2::RequestUpdate(bool txall)
+  {
+  if (txall)
+    {
+    m_lasttx = 0;
+    }
+  else
+    {
+    m_now_stat = true;
+    m_now_gen = true;
+    m_now_gps = true;
+    m_now_tpms = true;
+    m_now_firmware = true;
+    m_now_environment = true;
+    m_now_capabilities = true;
+    m_now_group = true;
     }
   }
 
@@ -2174,6 +2238,21 @@ void ovmsv2_status(int verbosity, OvmsWriter* writer, OvmsCommand* cmd, int argc
     }
   }
 
+void ovmsv2_update(int verbosity, OvmsWriter* writer, OvmsCommand* cmd, int argc, const char* const* argv)
+  {
+  if (MyOvmsServerV2 == NULL)
+    {
+    writer->puts("ERROR: OVMS v2 server has not been started");
+    }
+  else
+    {
+    bool txall = (strcmp(cmd->GetName(), "all") == 0);
+    MyOvmsServerV2->RequestUpdate(txall);
+    writer->printf("Server V2 data update for %s metrics has been scheduled\n",
+      txall ? "all" : "modified");
+    }
+  }
+
 OvmsServerV2Init MyOvmsServerV2Init  __attribute__ ((init_priority (6100)));
 
 OvmsServerV2Init::OvmsServerV2Init()
@@ -2181,10 +2260,14 @@ OvmsServerV2Init::OvmsServerV2Init()
   ESP_LOGI(TAG, "Initialising OVMS V2 Server (6100)");
 
   OvmsCommand* cmd_server = MyCommandApp.FindCommand("server");
-  OvmsCommand* cmd_v2 = cmd_server->RegisterCommand("v2","OVMS Server V2 Protocol");
+  OvmsCommand* cmd_v2 = cmd_server->RegisterCommand("v2","OVMS Server V2 Protocol", ovmsv2_status, "", 0, 0, false);
   cmd_v2->RegisterCommand("start","Start an OVMS V2 Server Connection",ovmsv2_start);
   cmd_v2->RegisterCommand("stop","Stop an OVMS V2 Server Connection",ovmsv2_stop);
   cmd_v2->RegisterCommand("status","Show OVMS V2 Server connection status",ovmsv2_status);
+
+  OvmsCommand* cmd_update = cmd_v2->RegisterCommand("update", "Request OVMS V2 Server data update", ovmsv2_update);
+  cmd_update->RegisterCommand("all", "Transmit all metrics covered by v2 protocol", ovmsv2_update);
+  cmd_update->RegisterCommand("modified", "Transmit modified metrics only", ovmsv2_update);
 
   MyConfig.RegisterParam("server.v2", "V2 Server Configuration", true, true);
   // Our instances:
