@@ -84,11 +84,11 @@
 #define VSPI_PIN_MISO             19
 #define VSPI_PIN_MOSI             23
 #define VSPI_PIN_CLK              18
-#define VSPI_PIN_MCP2515_1_CS     5
+#define VSPI_PIN_MCP2515_1_CS     27
 #define VSPI_PIN_MAX7317_CS       21
-#define VSPI_PIN_MCP2515_2_CS     27
-#define VSPI_PIN_MCP2515_1_INT    34
-#define VSPI_PIN_MCP2515_2_INT    35
+#define VSPI_PIN_MCP2515_2_CS     5
+#define VSPI_PIN_MCP2515_1_INT    35
+#define VSPI_PIN_MCP2515_2_INT    34
 
 #define SDCARD_PIN_CLK            14
 #define SDCARD_PIN_CMD            15
