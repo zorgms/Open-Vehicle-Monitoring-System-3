@@ -49,7 +49,7 @@ constexpr uint32_t UNLOCKED_CHARGING_TIMEOUT = 5u;
 constexpr uint16_t DIAG_ATTEMPTS = 3u;
 
 //Variant a specific polls
-const OvmsVehicle::poll_pid_t obdii_polls_a[] =
+const OvmsPoller::poll_pid_t obdii_polls_a[] =
 {
     { bmsId, bmsId | rxFlag, VEHICLE_POLL_TYPE_OBDIIEXTENDED, bmsStatusPid, {  0, 5, 5, 0  }, 0, ISOTP_STD },
     { bmsId, bmsId | rxFlag, VEHICLE_POLL_TYPE_OBDIIEXTENDED, batteryBusVoltagePid, {  0, 5, 30, 0  }, 0, ISOTP_STD },
@@ -110,7 +110,11 @@ OvmsVehicleMgEvA::OvmsVehicleMgEvA()
     m_dod_upper->SetValue(BMSDoDLimits[BMSVersion].Upper);
     m_batt_capacity->SetValue(BATT_CAPACITY);
     m_max_dc_charge_rate->SetValue(MAX_CHARGE_RATE);
-
+    
+    ESP_LOGD(TAG, "BMS DoD lower = %f upper = %f", 
+             MyConfig.GetParamValueFloat("xmg","bms.dod.lower"),
+             MyConfig.GetParamValueFloat("xmg","bms.dod.upper"));
+    
     //Add variant specific poll data
     ConfigurePollData(obdii_polls_a, sizeof(obdii_polls_a));
     
