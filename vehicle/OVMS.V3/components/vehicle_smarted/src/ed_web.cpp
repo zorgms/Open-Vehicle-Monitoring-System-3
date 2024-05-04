@@ -68,6 +68,7 @@ void OvmsVehicleSmartED::WebInit()
   MyWebServer.RegisterPage("/xse/cellcapa",   "BMS Cell Capacity", WebCfgBmsCellCapacity,               PageMenu_Vehicle, PageAuth_Cookie);
   MyWebServer.RegisterPage("/xse/commands",   "Commands",          WebCfgCommands,                      PageMenu_Vehicle, PageAuth_Cookie);
   MyWebServer.RegisterPage("/xse/notify",     "Notifys",           WebCfgNotify,                        PageMenu_Vehicle, PageAuth_Cookie);
+  MyWebServer.RegisterPage("/xse/acpoll",     "AirCon Parms",      WebCfgACPoll,                        PageMenu_Vehicle, PageAuth_Cookie);
 }
 
 /**
@@ -83,6 +84,7 @@ void OvmsVehicleSmartED::WebDeInit()
   MyWebServer.DeregisterPage("/xse/cellcapa");
   MyWebServer.DeregisterPage("/xse/commands");
   MyWebServer.DeregisterPage("/xse/notify");
+  MyWebServer.DeregisterPage("/xse/acpoll");
 }
 
 /**
@@ -1469,6 +1471,142 @@ void OvmsVehicleSmartED::WebCfgEco(PageEntry_t& p, PageContext_t& c)
 c.done();
 }
 
+/**
+ * WebPlugin to display AirCon Parameters
+ */
+void OvmsVehicleSmartED::WebCfgACPoll(PageEntry_t& p, PageContext_t& c)
+{
+  std::string cmd, output;
+
+  c.head(200);
+  PAGE_HOOK("body.pre");
+
+  c.print(
+  "<div class=\"panel panel-primary\">"
+  "<div class=\"panel-heading\">SmartED 451 AC Parameter</div>"
+  "<div class=\"panel-body\">"
+    "<div class=\"receiver\">"
+      "<div class=\"row flex\">"
+      "<div class=\"table-responsive\">"
+      "<table class=\"table table-bordered table-condensed\">"
+        "<tbody>"
+          "<tr>"
+            "<th>DT_IOC_HV_PTC_Ansteuern</th>"
+            "<td>"
+              "<div class=\"metric number\" data-metric=\"xse.ac.ioc.hv\"><span class=\"value\">?</span><span class=\"unit\">%</span></div>"
+            "</td>"
+          "</tr>"
+          "<tr>"
+            "<th>DT_LID_10_CAN_Aussentemperatur</th>"
+            "<td>"
+              "<div class=\"metric number\" data-metric=\"xse.ac.lid.10\" data-prec=\"1\"><span class=\"value\">?</span><span class=\"unit\">°C</span></div>"
+            "</td>"
+          "</tr>"
+          "<tr>"
+            "<th>DT_LID_11_System_Aussentemperatur</th>"
+            "<td>"
+              "<div class=\"metric number\" data-metric=\"xse.ac.lid.11\" data-prec=\"1\"><span class=\"value\">?</span><span class=\"unit\">°C</span></div>"
+            "</td>"
+          "</tr>"
+          "<tr>"
+            "<th>DT_LID_12_Innentemperatur</th>"
+            "<td>"
+              "<div class=\"metric number\" data-metric=\"xse.ac.lid.12\" data-prec=\"1\"><span class=\"value\">?</span><span class=\"unit\">°C</span></div>"
+            "</td>"
+          "</tr>"
+          "<tr>"
+            "<th>DT_LID_00_Bordspannung</th>"
+            "<td>"
+              "<div class=\"metric number\" data-metric=\"xse.ac.lid.00\" data-prec=\"1\"><span class=\"value\">?</span><span class=\"unit\">V</span></div>"
+            "</td>"
+          "</tr>"
+          "<tr>"
+            "<th>DT_LID_30_Eingestellter_Wert_Drehschalter_Temperatur</th>"
+            "<td>"
+              "<div class=\"metric number\" data-metric=\"xse.ac.lid.30\" data-prec=\"1\"><span class=\"value\">?</span><span class=\"unit\">°C</span></div>"
+            "</td>"
+          "</tr>"
+          "<tr>"
+            "<th>DT_LID_56_Ptc_Temperatur</th>"
+            "<td>"
+              "<div class=\"metric number\" data-metric=\"xse.ac.lid.56\" data-prec=\"1\"><span class=\"value\">?</span><span class=\"unit\">°C</span></div>"
+            "</td>"
+          "</tr>"
+          "<tr>"
+            "<th>DT_LID_63_Sollwert_HV_PTC</th>"
+            "<td>"
+              "<div class=\"metric number\" data-metric=\"xse.ac.lid.63\"><span class=\"value\">?</span><span class=\"unit\">%</span></div>"
+            "</td>"
+          "</tr>"
+          "<tr>"
+            "<th>DT_LID_65_Istwert_HV_Versorgung_PTC</th>"
+            "<td>"
+              "<div class=\"metric number\" data-metric=\"xse.ac.lid.65\" data-prec=\"1\"><span class=\"value\">?</span><span class=\"unit\">V</span></div>"
+            "</td>"
+          "</tr>"
+          "<tr>"
+            "<th>DT_LID_6B_Vorhandene_Leistung_fuer_Kabinen_Vorbedingung</th>"
+            "<td>"
+              "<div class=\"metric number\" data-metric=\"xse.ac.lid.6b\"><span class=\"value\">?</span><span class=\"unit\">W</span></div>"
+            "</td>"
+          "</tr>"
+          "<tr>"
+            "<th>DT_LID_6D_Status_Sicherheitsabschaltung_HV_PTC_Status</th>"
+            "<td>"
+              "<div class=\"metric number\" data-metric=\"xse.ac.lid.6d\"><span class=\"value\">?</span></div>"
+            "</td>"
+          "</tr>"
+          "<tr>"
+            "<th>DT_LID_6E_Status_Sollwert_Uebernahme_HV_PTC_Strang_1</th>"
+            "<td>"
+              "<div class=\"metric text\" data-metric=\"xse.ac.lid.6e.1\"><span class=\"value\">?</span></div>"
+            "</td>"
+          "</tr>"
+          "<tr>"
+            "<th>DT_LID_6E_Status_Sollwert_Uebernahme_HV_PTC_Strang_2</th>"
+            "<td>"
+              "<div class=\"metric text\" data-metric=\"xse.ac.lid.6e.2\"><span class=\"value\">?</span></div>"
+            "</td>"
+          "</tr>"
+          "<tr>"
+            "<th>DT_LID_6E_Status_Sollwert_Uebernahme_HV_PTC_Strang_3</th>"
+            "<td>"
+              "<div class=\"metric text\" data-metric=\"xse.ac.lid.6e.3\"><span class=\"value\">?</span></div>"
+            "</td>"
+          "</tr>"
+          "<tr>"
+            "<th>DT_LID_6E_Status_Sollwert_Uebernahme_HV_PTC_Strang_4</th>"
+            "<td>"
+              "<div class=\"metric text\" data-metric=\"xse.ac.lid.6e.4\"><span class=\"value\">?</span></div>"
+            "</td>"
+          "</tr>"
+          "<tr>"
+            "<th>DT_LID_6F_Betriebsstatus_HV_PTC_Status</th>"
+            "<td>"
+              "<div class=\"metric number\" data-metric=\"xse.ac.lid.6f\"><span class=\"value\">?</span></div>"
+            "</td>"
+          "</tr>"
+          "<tr>"
+            "<th>DT_LID_70_HV_Strom_HV_PTC</th>"
+            "<td>"
+              "<div class=\"metric number\" data-metric=\"xse.ac.lid.70\" data-prec=\"1\"><span class=\"value\">?</span><span class=\"unit\">A</span></div>"
+            "</td>"
+          "</tr>"
+        "</tbody>"
+      "</table>"
+      "</div>"
+      "</div>"
+    "</div>"
+  "</div>"
+  "<div class=\"panel-footer\">"
+    "<a class=\"btn btn-default\" href=\"#\" data-target=\"#out1\" data-cmd=\"xse acpoll\">Load Data</a>"
+    "<samp id=\"out1\" />"
+  "</div>"
+  "</div>");
+
+  PAGE_HOOK("body.post");
+  c.done();
+}
 /**
  * GetDashboardConfig: smart ED specific dashboard setup
  */
