@@ -204,7 +204,7 @@ static const char *TAG = "v-kiasoulev";
 // Pollstate 0 - car is off
 // Pollstate 1 - car is on
 // Pollstate 2 - car is charging
-static const OvmsVehicle::poll_pid_t vehicle_kiasoulev_polls[] =
+static const OvmsPoller::poll_pid_t vehicle_kiasoulev_polls[] =
   {
     { 0x7e2, 0x7ea, VEHICLE_POLL_TYPE_OBDIIVEHICLE,  0x02, 		{       0,  120,   0 }, 0, ISOTP_STD }, 	// VIN
     { 0x7e4, 0x7ec, VEHICLE_POLL_TYPE_OBDIIGROUP,  	0x01, 		{       0,   10,  10 }, 0, ISOTP_STD }, 	// BMC Diag page 01 *
@@ -377,8 +377,7 @@ OvmsVehicleKiaSoulEv::OvmsVehicleKiaSoulEv()
 
   m_v_power_usage = MyMetrics.InitFloat("xks.v.power.usage", 10, 0, kW);
 
-  m_v_trip_consumption1 = MyMetrics.InitFloat("xks.v.trip.consumption.KWh/100km", 10, 0, Other);
-  m_v_trip_consumption2 = MyMetrics.InitFloat("xks.v.trip.consumption.km/kWh", 10, 0, Other);
+  m_v_trip_consumption = MyMetrics.InitFloat("xks.v.trip.consumption", 10, 0, kWhP100K);
 
   // test
   m_v_test_charing = MyMetrics.InitBool("xks.v.test.charging", SM_STALE_MIN, false);
@@ -589,10 +588,8 @@ void OvmsVehicleKiaSoulEv::Ticker1(uint32_t ticker)
 		// Cooling?
 		StdMetrics.ms_v_env_cooling->SetValue (  m_v_env_climate_ac->AsBool() && StdMetrics.ms_v_env_temp->AsFloat(10,Celcius) > m_v_env_climate_temp->AsFloat(16, Celcius) );
 
-	  if( StdMetrics.ms_v_pos_trip->AsFloat(Kilometers)>0 )
-	  		m_v_trip_consumption1->SetValue( StdMetrics.ms_v_bat_energy_used->AsFloat(kWh) * 10 / StdMetrics.ms_v_pos_trip->AsFloat(Kilometers) );
-	  if( StdMetrics.ms_v_bat_energy_used->AsFloat(kWh)>0 )
-	  		m_v_trip_consumption2->SetValue( StdMetrics.ms_v_pos_trip->AsFloat(Kilometers) * 10 / StdMetrics.ms_v_bat_energy_used->AsFloat(kWh) );
+		if( StdMetrics.ms_v_pos_trip->AsFloat(Kilometers)>0 )
+			m_v_trip_consumption->SetValue( StdMetrics.ms_v_bat_energy_used->AsFloat(kWh) * 10 / StdMetrics.ms_v_pos_trip->AsFloat(Kilometers), kWhP100K);
 
 		}
 
@@ -723,13 +720,13 @@ void OvmsVehicleKiaSoulEv::HandleCharging()
 							&& (kia_last_ideal_range < LIMIT_RANGE )))
       {
       // ...enter state 2=topping off when we've reach the needed range / SOC:
-        SET_CHARGE_STATE("topoff", NULL);
+  			SET_CHARGE_STATE("topoff");
       }
     else if (BAT_SOC >= 95) // ...else set "topping off" from 94% SOC:
-      {
-        SET_CHARGE_STATE("topoff", NULL);
-      }
-    }
+    		{
+			SET_CHARGE_STATE("topoff");
+    		}
+  		}
 
   // Check if we have what is needed to calculate remaining minutes
   if (CHARGE_VOLTAGE > 0 && CHARGE_CURRENT > 0)
@@ -791,16 +788,16 @@ void OvmsVehicleKiaSoulEv::HandleCharging()
 
     }
   else
-  	{
-  	if( m_v_preheating->AsBool())
-      {
-      SET_CHARGE_STATE("heating","scheduledstart");
-      }
-    else
-      {
-      SET_CHARGE_STATE("charging",NULL);
-      }
-    }
+  		{
+  		if( m_v_preheating->AsBool())
+  			{
+  			SET_CHARGE_STATE("heating","scheduledstart");
+  			}
+  		else
+  			{
+  			SET_CHARGE_STATE("charging");
+  			}
+  		}
   StdMetrics.ms_v_charge_kwh->SetValue((CUM_CHARGE - kia_cum_charge_start)/10.0, kWh); // kWh charged
   kia_last_soc = BAT_SOC;
   kia_last_ideal_range = IDEAL_RANGE;

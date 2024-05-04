@@ -56,7 +56,7 @@ static const char *TAG = "v-voltampera";
 // 1 = car is on and ready to Drive
 // 2 = car wakeup or powertrain off, one request with high polling speed. After swith to state 1.
 
-static const OvmsVehicle::poll_pid_t va_polls[]
+static const OvmsPoller::poll_pid_t va_polls[]
   =
   {
     { 0x7e0, 0x7e8, VEHICLE_POLL_TYPE_OBDIIEXTENDED, 0x002F, {  0, 600,  0 },   0, ISOTP_STD }, // Fuel Level
@@ -130,7 +130,7 @@ OvmsVehicleVoltAmpera::OvmsVehicleVoltAmpera()
   //Add cell requests to polling list
   const int nCellListSize = 96; 
   const int va_pollsSize = sizeof(va_polls)/sizeof(va_polls[0]);
-  m_pPollingList = new poll_pid_t[va_pollsSize + nCellListSize];
+  m_pPollingList = new OvmsPoller::poll_pid_t[va_pollsSize + nCellListSize];
   uint16_t pid = 0x4181;
   
   int iPoll=0;
@@ -225,18 +225,18 @@ void OvmsVehicleVoltAmpera::TxCallback(const CAN_frame_t* p_frame, bool success)
   if (p_frame->MsgID == 0x7e4)
     {
     if (!success)
-      ESP_LOGE(TAG, "TxCallback. Error sending poll request. MsgId: 0x%x", p_frame->MsgID);
+      ESP_LOGE(TAG, "TxCallback. Error sending poll request. MsgId: 0x%" PRIx32, p_frame->MsgID);
     return;
     }
 
   if (success) 
     {
-    ESP_LOGD(TAG,"TxCallback. Success. Frame %08x: [%02x %02x %02x %02x %02x %02x %02x %02x]", 
+    ESP_LOGD(TAG,"TxCallback. Success. Frame %08" PRIx32 ": [%02x %02x %02x %02x %02x %02x %02x %02x]", 
       p_frame->MsgID, d[0], d[1], d[2], d[3], d[4], d[5], d[6], d[7] );
     } 
   else
     {
-    ESP_LOGE(TAG,"TxCallback. Failed! Frame %08x: [%02x %02x %02x %02x %02x %02x %02x %02x]", 
+    ESP_LOGE(TAG,"TxCallback. Failed! Frame %08" PRIx32 ": [%02x %02x %02x %02x %02x %02x %02x %02x]", 
       p_frame->MsgID, d[0], d[1], d[2], d[3], d[4], d[5], d[6], d[7] );
     }
   }
@@ -249,7 +249,7 @@ void OvmsVehicleVoltAmpera::IncomingFrameCan1(CAN_frame_t* p_frame)
 
   m_candata_timer = VA_CANDATA_TIMEOUT;
 
-  ESP_LOGV(TAG,"CAN1 message received: %08x: [%02x %02x %02x %02x %02x %02x %02x %02x]", 
+  ESP_LOGV(TAG,"CAN1 message received: %08" PRIx32 ": [%02x %02x %02x %02x %02x %02x %02x %02x]", 
     p_frame->MsgID, d[0], d[1], d[2], d[3], d[4], d[5], d[6], d[7] );
 
   if ((p_frame->MsgID & 0xff8) == 0x7e8)
@@ -427,7 +427,7 @@ void OvmsVehicleVoltAmpera::IncomingFrameCan4(CAN_frame_t* p_frame)
 
   m_candata_timer = VA_CANDATA_TIMEOUT;
 
-  ESP_LOGV(TAG,"SW CAN message received: %08x: [%02x %02x %02x %02x %02x %02x %02x %02x]", 
+  ESP_LOGV(TAG,"SW CAN message received: %08" PRIx32 ": [%02x %02x %02x %02x %02x %02x %02x %02x]", 
     p_frame->MsgID, d[0], d[1], d[2], d[3], d[4], d[5], d[6], d[7] );
 
   // Activity on the bus, so resume polling
@@ -665,22 +665,22 @@ void OvmsVehicleVoltAmpera::IncomingFrameCan4(CAN_frame_t* p_frame)
     ClimateControlIncomingSWCAN(p_frame);
   }
 
-void OvmsVehicleVoltAmpera::IncomingPollReply(canbus* bus, uint16_t type, uint16_t pid, uint8_t* data, uint8_t length, uint16_t mlremain)
+void OvmsVehicleVoltAmpera::IncomingPollReply(const OvmsPoller::poll_job_t &job, uint8_t* data, uint8_t length)
   {
   uint8_t value = *data;
 
   //Cell voltage
   const uint16_t pid_cellv1 = 0x4181;
-  if((pid>=pid_cellv1 && pid<=pid_cellv1+30) || (pid>=pid_cellv1+127 && pid<=pid_cellv1+191)){
+  if((job.pid>=pid_cellv1 && job.pid<=pid_cellv1+30) || (job.pid>=pid_cellv1+127 && job.pid<=pid_cellv1+191)){
     if(length <2)
       return;
 
     int nCellNum = 0;
-    if(pid <= pid_cellv1+30){
-      nCellNum = pid - pid_cellv1;
+    if(job.pid <= pid_cellv1+30){
+      nCellNum = job.pid - pid_cellv1;
     }
     else{
-      nCellNum = pid - pid_cellv1 - 96;
+      nCellNum = job.pid - pid_cellv1 - 96;
     }
 
     if(nCellNum == 0)
@@ -691,7 +691,7 @@ void OvmsVehicleVoltAmpera::IncomingPollReply(canbus* bus, uint16_t type, uint16
     return;
   }
 
-  switch (pid)
+  switch (job.pid)
     {
     case 0x002f:  // Fuel level
       if(mt_fuel_level->SetValue((int)value * 100 / 255))
@@ -783,6 +783,16 @@ void OvmsVehicleVoltAmpera::Ticker10(uint32_t ticker)
     }
   }
 
+void OvmsVehicleVoltAmpera::PollRunFinished()
+  {
+  if(m_poll_state == 2)
+    {
+    // polling complete one time for state 2. Switch to state 1.
+    PollSetState(1);
+    PollSetThrottling(VA_POLLING_NORMAL_THROTTLING);
+    }
+  }
+
 void OvmsVehicleVoltAmpera::Ticker1(uint32_t ticker)
   {
   // Check if the car has gone to sleep
@@ -812,13 +822,6 @@ void OvmsVehicleVoltAmpera::Ticker1(uint32_t ticker)
       }
     }
   
-  if((m_poll_state == 2) && (m_poll_plcur == m_poll_plist))
-    {
-    // polling complete one time for state 2. Switch to state 1.
-    PollSetState(1);
-    PollSetThrottling(VA_POLLING_NORMAL_THROTTLING);
-    }
-
   PreheatWatchdog();
 
   if (m_controlled_lights)
@@ -1094,7 +1097,7 @@ OvmsVehicle::vehicle_command_t OvmsVehicleVoltAmpera::CommandUnlock(const char* 
 
 OvmsVehicle::vehicle_command_t OvmsVehicleVoltAmpera::CommandLights(va_light_t lights, bool turn_on)
   {
-  ESP_LOGI(TAG,"CommandLights: lights 0x%x:%d",(uint32_t)lights,turn_on);
+  ESP_LOGI(TAG,"CommandLights: lights 0x%" PRIx32 ":%d",(uint32_t)lights,turn_on);
   SendTesterPresentMessage(VA_BCM);
   vTaskDelay(200 / portTICK_PERIOD_MS);  
 
@@ -1171,7 +1174,7 @@ OvmsVehicle::vehicle_command_t OvmsVehicleVoltAmpera::CommandLights(va_light_t l
 
   // Set the bitwise status of the lights that we control and are now ON. If any of these are set, we send periodic Tester Present messages
   m_controlled_lights = (m_controlled_lights & ~lights) | (lights*turn_on);
-  ESP_LOGI(TAG,"CommandLights: controlled_lights 0x%x",m_controlled_lights);
+  ESP_LOGI(TAG,"CommandLights: controlled_lights 0x%" PRIx32,m_controlled_lights);
   return Success;
   }
 

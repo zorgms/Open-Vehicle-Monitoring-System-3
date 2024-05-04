@@ -15,6 +15,7 @@ static const char *TAG = "ovms_main";
 #include "ovms_events.h"
 #include "ovms_config.h"
 #include "ovms_module.h"
+#include "ovms_boot.h"
 #include <esp_task_wdt.h>
 
 extern "C"
@@ -35,8 +36,22 @@ static class FrameworkInit
         CONFIG_LOG_DEFAULT_LEVEL == 1 ? "ERROR" : "None");
       esp_log_level_set("*",(esp_log_level_t)CONFIG_LOG_DEFAULT_LEVEL);
 
+#if !WDT_ALREADY_INITIALIZED
       ESP_LOGI(TAG, "Initialising WATCHDOG...");
+#if ESP_IDF_VERSION_MAJOR >= 5
+      // If the TWDT was not initialized automatically on startup, manually intialize it now
+      esp_task_wdt_config_t config = {
+          .timeout_ms = 120 * 1000,
+          .idle_core_mask = 0,
+          .trigger_panic = true,
+      };
+      ESP_ERROR_CHECK(esp_task_wdt_init(&config));
+#else
       esp_task_wdt_init(120, true);
+#endif
+#else
+      ESP_LOGI(TAG, "WATCHDOG already initialized...");
+#endif // WDT_ALREADY_INITIALIZED
       }
   } fwi  __attribute__ ((init_priority (0150)));
 
@@ -53,6 +68,7 @@ void app_main(void)
 
   ESP_LOGI(TAG, "Executing on CPU core %d",xPortGetCoreID());
   AddTaskToMap(xTaskGetCurrentTaskHandle());
+  MyBoot.Init();
 
   ESP_LOGI(TAG, "Mounting CONFIG...");
   MyConfig.mount();

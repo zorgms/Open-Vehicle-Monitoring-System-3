@@ -100,6 +100,12 @@ OvmsVehicleSmartED::OvmsVehicleSmartED() : smarted_obd_rxwait(1,1) {
   // 12v charging
   m_charging_timer    = 0;
 
+  m_last_pid = 0;
+  m_reboot_ticker = 0;
+  m_cfg_cell_interval_drv = 0;
+  m_cfg_cell_interval_chg = 0;
+  m_cfg_cell_interval_awk = 0;
+
   // init commands:
   cmd_xse = MyCommandApp.RegisterCommand("xse","SmartED 451 Gen.3");
   cmd_xse->RegisterCommand("recu","Set recu..", xse_recu, "<up/down>",1,1);
@@ -108,9 +114,9 @@ OvmsVehicleSmartED::OvmsVehicleSmartED() : smarted_obd_rxwait(1,1) {
   cmd_xse->RegisterCommand("trip", "Show vehicle trip", xse_trip);
   cmd_xse->RegisterCommand("bmsdiag", "Show BMS diagnostic", xse_bmsdiag);
   cmd_xse->RegisterCommand("rptdata", "Show BMS RPTdata", xse_RPTdata);
+  cmd_xse->RegisterCommand("acpoll", "AirCon Parameter Poll", xse_ACPoll);
 
   MyConfig.RegisterParam("xse", "Smart ED", true, true);
-  ConfigChanged(NULL);
 
   RegisterCanBus(1, CAN_MODE_ACTIVE, CAN_SPEED_500KBPS);
   RegisterCanBus(2, CAN_MODE_ACTIVE, CAN_SPEED_500KBPS);
@@ -118,6 +124,9 @@ OvmsVehicleSmartED::OvmsVehicleSmartED() : smarted_obd_rxwait(1,1) {
   // init OBD2 poller:
   ObdInitPoll();
   VCInit();
+  DTCPollInit();
+
+  ConfigChanged(NULL);
 
 #ifdef CONFIG_OVMS_COMP_WEBSERVER
   WebInit();
@@ -164,6 +173,23 @@ void OvmsVehicleSmartED::ConfigChanged(OvmsConfigParam* param) {
 
   StandardMetrics.ms_v_charge_limit_soc->SetValue((float) MyConfig.GetParamValueInt("xse", "suffsoc", 0), Percentage );
   StandardMetrics.ms_v_charge_limit_range->SetValue((float) MyConfig.GetParamValueInt("xse", "suffrange", 0), Kilometers );
+
+  int cell_interval_drv = MyConfig.GetParamValueInt("xse", "cell_interval_drv", 60);
+  int cell_interval_chg = MyConfig.GetParamValueInt("xse", "cell_interval_chg", 60);
+  int cell_interval_awk = MyConfig.GetParamValueInt("xse", "cell_interval_awk", 60);
+
+  bool do_modify_poll = (
+    (cell_interval_drv != m_cfg_cell_interval_drv) ||
+    (cell_interval_chg != m_cfg_cell_interval_chg) ||
+    (cell_interval_awk != m_cfg_cell_interval_awk));
+
+  m_cfg_cell_interval_drv = cell_interval_drv;
+  m_cfg_cell_interval_chg = cell_interval_chg;
+  m_cfg_cell_interval_awk = cell_interval_awk;
+
+  if (do_modify_poll) {
+    ObdModifyPoll();
+  }
 
   if (!m_enable_write) PollSetState(0);
 
@@ -652,13 +678,16 @@ void OvmsVehicleSmartED::IncomingFrameCan1(CAN_frame_t* p_frame) {
     // Polling IDs
     case 0x7a3:
     {
-      // 7a3 8 04 61 12 64 00 00 00 00 || 7A3 04 61 12 c2 ff 00 00 00
+      // 7a3 8 04 61 12 64 00 00 00 00 || 7A3 04 61 12 c2 ff 00 00 00 // 04 70 31 01 C8 
       if (d[0] == 0x04 && d[1] == 0x61 && d[2] == 0x12) {
         if (d[4] == 0xff) {
           int temp = CAN_UINT(3)-0xffff;
           StandardMetrics.ms_v_env_cabintemp->SetValue((float) temp / 10.0);
         } else
           StandardMetrics.ms_v_env_cabintemp->SetValue((float) CAN_UINT(3) / 10.0);
+      }
+      if (d[0] == 0x04 && d[1] == 0x70 && d[2] == 0x31 && d[3] == 0x01) {
+        mt_dt_ioc_hv->SetValue(d[4] * 0.5);
       }
       // ESP_LOGD(TAG, "%03x 8 %02x %02x %02x %02x %02x %02x %02x %02x", p_frame->MsgID, d[0], d[1], d[2], d[3], d[4], d[5], d[6], d[7]);
       break;

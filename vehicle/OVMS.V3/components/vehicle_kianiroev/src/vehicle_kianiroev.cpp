@@ -78,7 +78,7 @@ static const char *TAG = "v-kianiroev";
 // Pollstate 0 - car is off
 // Pollstate 1 - car is on
 // Pollstate 2 - car is charging
-static const OvmsVehicle::poll_pid_t vehicle_kianiroev_polls[] =
+static const OvmsPoller::poll_pid_t vehicle_kianiroev_polls[] =
   {
   		{ 0x7e2, 0x7ea, VEHICLE_POLL_TYPE_OBDII_1A, 				0x80, 			{       0,  120,	 120 }, 0, ISOTP_STD },  // VMCU - VIN
 
@@ -244,8 +244,7 @@ OvmsVehicleKiaNiroEv::OvmsVehicleKiaNiroEv()
 
   m_v_power_usage = MyMetrics.InitFloat("xkn.v.power.usage", 10, 0, kW);
 
-  m_v_trip_consumption1 = MyMetrics.InitFloat("xkn.v.trip.consumption.KWh/100km", 10, 0, Other);
-  m_v_trip_consumption2 = MyMetrics.InitFloat("xkn.v.trip.consumption.km/kWh", 10, 0, Other);
+  m_v_trip_consumption = MyMetrics.InitFloat("xkn.v.trip.consumption", 10, 0, kWhP100K);
 
   m_v_door_lock_fl = MyMetrics.InitBool("xkn.v.door.lock.front.left", 10, 0);
   m_v_door_lock_fr = MyMetrics.InitBool("xkn.v.door.lock.front.right", 10, 0);
@@ -308,7 +307,9 @@ OvmsVehicleKiaNiroEv::OvmsVehicleKiaNiroEv()
 OvmsVehicleKiaNiroEv::~OvmsVehicleKiaNiroEv()
   {
   ESP_LOGI(TAG, "Shutdown Kia Niro / Hyundai Kona EV vehicle module");
+#ifdef CONFIG_OVMS_COMP_WEBSERVER
   MyWebServer.DeregisterPage("/bms/cellmon");
+#endif
   }
 
 /**
@@ -416,9 +417,7 @@ void OvmsVehicleKiaNiroEv::Ticker1(uint32_t ticker)
 		}
 
 	if( StdMetrics.ms_v_pos_trip->AsFloat(Kilometers)>0 )
-			m_v_trip_consumption1->SetValue( StdMetrics.ms_v_bat_energy_used->AsFloat(kWh) * 100 / StdMetrics.ms_v_pos_trip->AsFloat(Kilometers) );
-	if( StdMetrics.ms_v_bat_energy_used->AsFloat(kWh)>0 )
-			m_v_trip_consumption2->SetValue( StdMetrics.ms_v_pos_trip->AsFloat(Kilometers) / StdMetrics.ms_v_bat_energy_used->AsFloat(kWh) );
+			m_v_trip_consumption->SetValue( StdMetrics.ms_v_bat_energy_used->AsFloat(kWh) * 100 / StdMetrics.ms_v_pos_trip->AsFloat(Kilometers), kWhP100K);
 
 	StdMetrics.ms_v_bat_power->SetValue( StdMetrics.ms_v_bat_voltage->AsFloat(400,Volts) * StdMetrics.ms_v_bat_current->AsFloat(1,Amps)/1000,kW );
 
@@ -639,21 +638,21 @@ void OvmsVehicleKiaNiroEv::HandleCharging()
 		POLLSTATE_CHARGING;
     }
   else
-  		{
-    // ******* Charging continues: *******
-    if (((BAT_SOC > 0) && (LIMIT_SOC > 0) && (BAT_SOC >= LIMIT_SOC) && (kia_last_soc < LIMIT_SOC))
-    			|| ((EST_RANGE > 0) && (LIMIT_RANGE > 0)
-    					&& (IDEAL_RANGE >= LIMIT_RANGE )
+		{
+		// ******* Charging continues: *******
+		if (((BAT_SOC > 0) && (LIMIT_SOC > 0) && (BAT_SOC >= LIMIT_SOC) && (kia_last_soc < LIMIT_SOC))
+			|| ((EST_RANGE > 0) && (LIMIT_RANGE > 0)
+					&& (IDEAL_RANGE >= LIMIT_RANGE )
 							&& (kia_last_ideal_range < LIMIT_RANGE )))
-    		{
-      // ...enter state 2=topping off when we've reach the needed range / SOC:
-  			SET_CHARGE_STATE("topoff", NULL);
-      }
-    else if (BAT_SOC >= 95) // ...else set "topping off" from 94% SOC:
-    		{
-			SET_CHARGE_STATE("topoff", NULL);
-    		}
-  		}
+			{
+			// ...enter state 2=topping off when we've reach the needed range / SOC:
+			SET_CHARGE_STATE("topoff");
+			}
+		else if (BAT_SOC >= 95) // ...else set "topping off" from 94% SOC:
+			{
+			SET_CHARGE_STATE("topoff");
+			}
+		}
 
   // Check if we have what is needed to calculate remaining minutes
   if (CHARGE_VOLTAGE > 0 && CHARGE_CURRENT > 0)
@@ -684,16 +683,16 @@ void OvmsVehicleKiaNiroEv::HandleCharging()
   		StdMetrics.ms_v_charge_duration_range->SetValue( CalcRemainingChargeMinutes(CHARGE_VOLTAGE*CHARGE_CURRENT, BAT_SOC, chargeTarget_range, kn_battery_capacity, niro_charge_steps), Minutes);
     }
   else
-  		{
-  		if( m_v_preheating->AsBool())
-  			{
-  			SET_CHARGE_STATE("heating","scheduledstart");
-  			}
-  		else
-  			{
-  			SET_CHARGE_STATE("charging",NULL);
-  			}
-  		}
+    {
+    if( m_v_preheating->AsBool())
+      {
+      SET_CHARGE_STATE("heating","scheduledstart");
+      }
+    else
+      {
+      SET_CHARGE_STATE("charging");
+      }
+    }
   StdMetrics.ms_v_charge_kwh->SetValue(CUM_CHARGE - kia_cum_charge_start, kWh); // kWh charged
   kia_last_soc = BAT_SOC;
   kia_last_battery_cum_charge = kia_battery_cum_charge;

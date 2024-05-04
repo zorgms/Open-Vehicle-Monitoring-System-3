@@ -36,14 +36,19 @@ static const char *TAG = "pluginstore";
 #include <sys/stat.h>
 #include <string>
 #include <string.h>
+#include "esp_idf_version.h"
+#if ESP_IDF_VERSION_MAJOR < 4
 #include "strverscmp.h"
+#endif
 #include "ovms_plugins.h"
 #include "ovms_command.h"
 #include "ovms_config.h"
 #include "ovms_http.h"
 #include "ovms_buffer.h"
 #include "ovms_netmanager.h"
+#ifdef CONFIG_OVMS_SC_JAVASCRIPT_DUKTAPE
 #include "ovms_duktape.h"
+#endif
 
 #ifdef CONFIG_OVMS_COMP_WEBSERVER
 #include "ovms_webserver.h"
@@ -500,6 +505,7 @@ void OvmsPluginStore::LoadEnabledModules(plugin_element_type_t type)
             {
             if ((type==EL_MODULE) && (e->m_type == EL_MODULE))
               {
+#ifdef CONFIG_OVMS_SC_JAVASCRIPT_DUKTAPE
               // Load an enabled script module
               const char* filename = "LoadEnabledModules";
               duk_context* ctx = MyDuktape.DukTapeContext();
@@ -523,6 +529,7 @@ void OvmsPluginStore::LoadEnabledModules(plugin_element_type_t type)
                 }
               duk_pop(ctx);
               ESP_LOGI(TAG,"  Load %s script %s", p.m_name.c_str(), e->m_path.c_str());
+#endif
               }
             #ifdef CONFIG_OVMS_COMP_WEBSERVER
             else if ((type==EL_WEB_PAGE) && (e->m_type == EL_WEB_PAGE))

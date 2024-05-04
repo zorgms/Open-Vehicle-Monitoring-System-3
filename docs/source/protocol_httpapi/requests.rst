@@ -8,6 +8,11 @@ GET     /api/cookie
 
 Login and return a session cookie.
 
+URL parameters:
+
+* ``username``: (mandatory) your server account login
+* ``password``: (mandatory) your server account password
+
 -------------------
 DELETE  /api/cookie
 -------------------
@@ -143,19 +148,62 @@ Return vehicle status:
 GET /api/tpms/<VEHICLEID>
 -------------------------
 
-Return tpms status:
+Return tpms status: the data available depends on the vehicle and module type.
 
-* ``fr_pressure``
-* ``fr_temperature``
-* ``rr_pressure``
+''''''''''''''''''''''''''''''''''
+V2 modules / old firmware versions
+''''''''''''''''''''''''''''''''''
+
+On V2 modules, the wheel layout is fixed to two front & two rear wheels, and sensor
+data is fixed to pressure and temperature:
+
+* ``fr_pressure``: front right pressure (PSI)
+* ``fr_temperature``: front right temperature (Celcius)
+* ``rr_pressure``: rear right
 * ``rr_temperature``
-* ``fl_pressure``
+* ``fl_pressure``: front left
 * ``fl_temperature``
-* ``rl_pressure``
+* ``rl_pressure``: rear left
 * ``rl_temperature``
-* ``staletpms``
+* ``staletpms``: overall value staleness, -1=undefined, 0=stale, 1=valid
 * ``m_msgage_w``: age (seconds) of last TPMS (W) message received if available
 * ``m_msgtime_w``: time stamp (UTC) of last TPMS (W) message received if available
+
+''''''''''
+V3 modules
+''''''''''
+
+V3 modules support any kind of wheel/nonwheel layout as well as two new sensor types
+(health & alert level). The actual wheel naming and value availability depends on the
+vehicle type. Default wheel layout/naming is the same as with V2, i.e. "fl", "fr",
+"rl" & "rr". For the wheel layout of other vehicles, see the respective vehicle manual
+pages.
+
+For each wheel, sensor values pressure, temperature, health and alert status **may**
+be available, i.e. all wheel fields are optional:
+
+* ``<wheelname>_pressure_kpa``: wheel pressure in kPa
+* ``<wheelname>_pressure``: wheel pressure in PSI
+* ``<wheelname>_temperature``: wheel temperature in Celcius
+* ``<wheelname>_health``: wheel health in percent
+* ``<wheelname>_alert``: wheel alert level, 0=none, 1=warning, 2=alert
+
+Staleness is available per sensor type & overall, with -1=undefined, 0=stale, 1=valid:
+
+* ``stale_pressure``
+* ``stale_temperature``
+* ``stale_health``
+* ``stale_alert``
+* ``staletpms`` (maximum value of the above)
+
+Metadata:
+
+* ``m_msgage_y``: age (seconds) of last TPMS (Y) message received if available
+* ``m_msgtime_y``: time stamp (UTC) of last TPMS (Y) message received if available
+* ``m_msgage_w``: compatibility copy of ``m_msgage_y``
+* ``m_msgtime_w``: compatibility copy of ``m_msgtime_y``
+
+
 
 -----------------------------
 GET /api/location/<VEHICLEID>
@@ -244,22 +292,37 @@ GET /api/historical/<VEHICLEID>
 
 Request historical data summary (as array of):
 
-* ``h_recordtype``
-* ``distinctrecs``
-* ``totalrecs``
-* ``totalsize``
-* ``first``
-* ``last``
+* ``h_recordtype``: record type, e.g. ``*-LOG-Notification``
+* ``distinctrecs``: number of distinct record numbers (``h_recordnumber``) stored
+* ``totalrecs``: total number of records stored
+* ``totalsize``: total transfer data volume (bytes) of all records
+* ``first``: ISO timestamp of earliest record
+* ``last``: ISO timestamp of latest record
 
-------------------------------------------
-GET /api/historical/<VEHICLEID>/<DATATYPE>
-------------------------------------------
+URL parameters:
 
-Request historical data records:
+* ``since``: (optional) limit output to records after the date/time specified (ISO format)
 
-* ``h_timestamp``
-* ``h_recordnumber``
-* ``h_data``
+--------------------------------------------
+GET /api/historical/<VEHICLEID>/<RECORDTYPE>
+--------------------------------------------
+
+Request historical data records (as array of):
+
+* ``h_timestamp``: ISO date/time of the record
+* ``h_recordnumber``: record type/application specific "record number" (arbitrary identifier)
+* ``h_data``: record type/application specific payload
+
+The records are ordered by ``h_timestamp`` (primary) and ``h_recordnumber`` (secondary), both in ascending order.
+
+``h_data`` may contain any kind of data. OVMS standard record types normally use a size
+optimized CSV (comma separated values) format, with fields as specified/documented
+for the record type. Another option can be JSON, with the advantage of field names being
+included, at the expense of additional data volume overhead.
+
+URL parameters:
+
+* ``since``: (optional) limit output to records after the date/time specified (ISO format)
 
 -------------------
 Not Yet Implemented

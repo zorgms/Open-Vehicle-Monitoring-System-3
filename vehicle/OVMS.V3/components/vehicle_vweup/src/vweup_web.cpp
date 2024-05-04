@@ -25,7 +25,12 @@
  * THE SOFTWARE.
  */
 
+#include <sdkconfig.h>
+#ifdef CONFIG_OVMS_COMP_WEBSERVER
+#include "esp_idf_version.h"
+#if ESP_IDF_VERSION_MAJOR < 4
 #define _GLIBCXX_USE_C99 // to enable std::stoi etc.
+#endif
 #include <stdio.h>
 #include <string>
 #include "ovms_metrics.h"
@@ -34,7 +39,6 @@
 #include "ovms_command.h"
 #include "metrics_standard.h"
 #include "ovms_notify.h"
-#include "ovms_webserver.h"
 
 #include "vehicle_vweup.h"
 
@@ -78,6 +82,7 @@ void OvmsVehicleVWeUp::WebCfgFeatures(PageEntry_t &p, PageContext_t &c)
   ConfigParamMap nmap = pmap;
   std::string error, warn;
   bool do_reload = false;
+  int climit = 16;
 
   if (c.method == "POST")
   {
@@ -92,7 +97,10 @@ void OvmsVehicleVWeUp::WebCfgFeatures(PageEntry_t &p, PageContext_t &c)
     nmap["cell_interval_awk"] = c.getvar("cell_interval_awk");
     nmap["bat.soh.source"] = c.getvar("bat.soh.source");
     nmap["ctp.maxpower"] = c.getvar("ctp_maxpower");
-    nmap["ctp.soclimit"] = c.getvar("ctp_soclimit");
+    nmap["chg_climit"] = c.getvar("chg_climit");
+    nmap["chg_soclimit"] = c.getvar("chg_soclimit");
+    nmap["chg_autostop"] = (c.getvar("chg_autostop") == "yes") ? "yes" : "no";
+    nmap["chg_workaround"] = (c.getvar("chg_workaround") == "yes") ? "yes" : "no";
 
     // check:
     if (nmap["modelyear"] != "")
@@ -144,12 +152,18 @@ void OvmsVehicleVWeUp::WebCfgFeatures(PageEntry_t &p, PageContext_t &c)
     // fill in defaults:
     if (nmap["modelyear"] == "")
       nmap["modelyear"] = STR(DEFAULT_MODEL_YEAR);
+    if (std::stoi(nmap["modelyear"]) > 2019)
+      climit = 32;
     if (nmap["con_obd"] == "")
       nmap["con_obd"] = "yes";
     if (nmap["con_t26"] == "")
       nmap["con_t26"] = "yes";
     if (nmap["bat.soh.source"] == "")
-      nmap["bat.soh.source"] = "charge";
+      nmap["bat.soh.source"] = "vw";
+    if (nmap["chg_autostop"] == "" || nmap["chg_autostop"] == "0")
+      nmap["chg_autostop"] = "no";
+    else if (nmap["chg_autostop"] == "1")
+      nmap["chg_autostop"] = "yes";
 
     c.head(200);
   }
@@ -179,24 +193,51 @@ void OvmsVehicleVWeUp::WebCfgFeatures(PageEntry_t &p, PageContext_t &c)
     "<p>This parameter can also be set in the app under FEATURES 15.</p>");
   c.fieldset_end();
 
-  c.fieldset_start("Charge Time Prediction");
-  c.input_slider("Default power limit", "ctp_maxpower", 3, "kW",
+  c.fieldset_start("Charge Control");
+  c.input_slider("SoC limit", "chg_soclimit", 3, "%",
+    -1, nmap["chg_soclimit"].empty() ? 80 : std::stof(nmap["chg_soclimit"]),
+    80, 0, 99, 1,
+    "<p>Used if no timer mode limits are available, i.e. without OBD connection or without timer schedule.</p>"
+    "<p>Value 0 disables the limit.</p>");
+
+  c.input_slider("Charge current limit", "chg_climit", 3, "Amps",
+    -1, nmap["chg_climit"].empty()? climit : std::stof(nmap["chg_climit"]),
+    climit, 4, climit, 1,
+    "<p>Set charge current limit in vehicle (may be reduced further by charging equipment!)</p>");
+
+/*  c.input_slider("Power limit", "ctp_maxpower", 3, "kW",
     -1, nmap["ctp.maxpower"].empty() ? 0 : std::stof(nmap["ctp.maxpower"]),
     0, 0, 30, 0.1,
     "<p>Used while not charging, default 0 = unlimited (except by car).</p>"
     "<p>Note: this needs to be the power level at the battery, i.e. after losses.</p>"
     "<p>Typical values: 6.5 kW for 2-phase charging, 3.2 kW for 1-phase, 2 kW for ICCB/Schuko.</p>");
-  c.input_slider("Default SOC limit", "ctp_soclimit", 3, "%",
-    -1, nmap["ctp.soclimit"].empty() ? 80 : std::stof(nmap["ctp.soclimit"]),
-    80, 10, 100, 5,
-    "<p>Used if no timer mode limits are available, i.e. without OBD connection or without timer schedule.</p>");
+*/
+  c.input_radiobtn_start("Charge limit mode", "chg_autostop");
+  c.input_radiobtn_option("chg_autostop", "Notify", "no", nmap["chg_autostop"] == "no");
+  c.input_radiobtn_option("chg_autostop", "Stop", "yes", nmap["chg_autostop"] == "yes");
+  c.input_radiobtn_end(
+    "<p>Only notify or stop charge when SoC limit is reached?</p>"
+    "<p>This parameter can also be set in the app under FEATURES 6.</p>");
+
+  c.input_checkbox("Enable charge control workaround", "chg_workaround", strtobool(nmap["chg_workaround"]),
+    "<p></p>"
+    "<p style=\"color:Tomato;\"><strong>WARNING: In rare cases, this feature might leave the car in a state where it is unable to charge.</strong></p>"
+    "<p>This can only be fixed by changing the charge current via a working OVMS or Maps&More.<br>"
+    "Only enable this feature if you are aware of the risk and are capable of fixing the issue!<br>"
+    "Without this feature, charge control may not work reliably.</p>"
+    );
+
   c.fieldset_end();
 
   c.fieldset_start("Battery Health", "needs-con-obd");
   c.input_radiobtn_start("SOH source", "bat.soh.source");
+  c.input_radiobtn_option("bat.soh.source", "Official VW SOH", "vw", (nmap["bat.soh.source"] == "vw"));
   c.input_radiobtn_option("bat.soh.source", "Charge capacity", "charge", (nmap["bat.soh.source"] == "charge"));
   c.input_radiobtn_option("bat.soh.source", "Range estimation", "range", (nmap["bat.soh.source"] == "range"));
   c.input_radiobtn_end(
+    "<p><b>Official VW SOH</b> "
+    "(currently <span class=\"metric\" data-metric=\"xvu.b.soh.vw\" data-prec=\"1\">?</span>%) "
+    "taken directly via OBD from ECU 8C PID 74 CB</p>"
     "<p><b>Charge capacity SOH</b> "
     "(currently <span class=\"metric\" data-metric=\"xvu.b.soh.charge\" data-prec=\"1\">?</span>%) "
     "needs a couple of full charges to settle but tends to be more precise.</p>"
@@ -251,16 +292,21 @@ void OvmsVehicleVWeUp::WebCfgClimate(PageEntry_t &p, PageContext_t &c)
 {
   std::string error;
   std::string cc_temp;
+  ConfigParamMap pmap = MyConfig.GetParamMap("xvu");
+  ConfigParamMap nmap = pmap;
 
   if (c.method == "POST")
   {
     // process form submission:
     cc_temp = c.getvar("cc_temp");
+    nmap["cc_temp"] = c.getvar("cc_temp");
+    nmap["cc_onbat"] = (c.getvar("cc_onbat") == "yes") ? "yes" : "no";
 
     if (error == "")
     {
       // store:
-      MyConfig.SetParamValue("xvu", "cc_temp", cc_temp);
+      //MyConfig.SetParamValue("xvu", "cc_temp", cc_temp);
+      MyConfig.SetParamMap("xvu", nmap);
 
       c.head(200);
       c.alert("success", "<p class=\"lead\">VW e-Up climate control configuration saved.</p>");
@@ -276,7 +322,7 @@ void OvmsVehicleVWeUp::WebCfgClimate(PageEntry_t &p, PageContext_t &c)
   else
   {
     // read configuration:
-    cc_temp = MyConfig.GetParamValue("xvu", "cc_temp", "21");
+//    cc_temp = MyConfig.GetParamValue("xvu", "cc_temp", "21");
 
     c.head(200);
   }
@@ -293,9 +339,14 @@ void OvmsVehicleVWeUp::WebCfgClimate(PageEntry_t &p, PageContext_t &c)
   c.fieldset_start("Climate control");
 
   c.input_slider("Cabin target temperature", "cc_temp", 3, "&#8451;",
-    -1, cc_temp.empty() ? 22 : atof(cc_temp.c_str()),
+    -1, nmap["cc_temp"].empty() ? 22 : std::stof(nmap["cc_temp"]),
     22, 15, 30, 1,
     "<p>Default 22 &#8451;, 15=Lo, 30=Hi.</p><br><p>This parameter can also be set in the app under FEATURES 21.</p>");
+  
+  c.fieldset_start("CC on Battery");
+  c.input_checkbox("Enable Climate Control on Battery", "cc_onbat", strtobool(nmap["cc_onbat"]),
+    "<p>This parameter can also be set in the app under FEATURES 22.</p>");
+  c.fieldset_end();
 
   c.input_button("default", "Save");
   c.form_end();
@@ -605,75 +656,84 @@ void OvmsVehicleVWeUp::GetDashboardConfig(DashboardConfig& cfg)
     bat_volt_red      = cells * 3.4,
     bat_volt_min      = cells * 3.3;
 
-  StringWriter buf;
-  buf.printf(
-    "yAxis: [{"
-      // Speed:
-      "min: 0, max: 140,"
-      "plotBands: ["
-        "{ from: 0, to: 100, className: 'green-band' },"
-        "{ from: 100, to: 120, className: 'yellow-band' },"
-        "{ from: 120, to: 140, className: 'red-band' }]"
-    "},{"
-      // Voltage:
-      "min: %.0f, max: %.0f,"
-      "plotBands: ["
-        "{ from: %.0f, to: %.1f, className: 'red-band' },"
-        "{ from: %.1f, to: %.1f, className: 'yellow-band' },"
-        "{ from: %.1f, to: %.0f, className: 'green-band' }]"
-    "},{"
-      // SOC:
-      "min: 0, max: 100,"
-      "plotBands: ["
-        "{ from: 0, to: 12.5, className: 'red-band' },"
-        "{ from: 12.5, to: 25, className: 'yellow-band' },"
-        "{ from: 25, to: 100, className: 'green-band' }]"
-    "},{"
-      // Efficiency:
-      "min: 0, max: 300,"
-      "plotBands: ["
-        "{ from: 0, to: 150, className: 'green-band' },"
-        "{ from: 150, to: 250, className: 'yellow-band' },"
-        "{ from: 250, to: 300, className: 'red-band' }]"
-    "},{"
-      // Power:
-      "min: -40, max: 80,"
-      "plotBands: ["
-        "{ from: -40, to: 0, className: 'violet-band' },"
-        "{ from: 0, to: 40, className: 'green-band' },"
-        "{ from: 40, to: 60, className: 'yellow-band' },"
-        "{ from: 60, to: 80, className: 'red-band' }]"
-    "},{"
-      // Charger temperature:
-      "min: 20, max: 80, tickInterval: 20,"
-      "plotBands: ["
-        "{ from: 20, to: 65, className: 'normal-band border' },"
-        "{ from: 65, to: 80, className: 'red-band border' }]"
-    "},{"
-      // Battery temperature:
-      "min: -15, max: 65, tickInterval: 25,"
-      "plotBands: ["
-        "{ from: -15, to: 0, className: 'red-band border' },"
-        "{ from: 0, to: 50, className: 'normal-band border' },"
-        "{ from: 50, to: 65, className: 'red-band border' }]"
-    "},{"
-      // Inverter temperature:
-      "min: 20, max: 80, tickInterval: 20,"
-      "plotBands: ["
-        "{ from: 20, to: 70, className: 'normal-band border' },"
-        "{ from: 70, to: 80, className: 'red-band border' }]"
-    "},{"
-      // Motor temperature:
-      "min: 50, max: 125, tickInterval: 25,"
-      "plotBands: ["
-        "{ from: 50, to: 110, className: 'normal-band border' },"
-        "{ from: 110, to: 125, className: 'red-band border' }]"
-    "}]",
-    bat_volt_min, bat_volt_max,
-    bat_volt_min, bat_volt_red,
-    bat_volt_red, bat_volt_yellow,
-    bat_volt_yellow, bat_volt_max
-  );
+  // Speed:
+  dash_gauge_t speed_dash(NULL,Kph);
+  speed_dash.SetMinMax(0, 140, 5);
+  speed_dash.AddBand("green", 0, 100);
+  speed_dash.AddBand("yellow", 100, 120);
+  speed_dash.AddBand("red", 120, 140);
 
-  cfg.gaugeset1 = buf;
+  // Voltage:
+  dash_gauge_t voltage_dash(NULL,Volts);
+  voltage_dash.SetMinMax(bat_volt_min, bat_volt_max);
+  voltage_dash.AddBand("red", bat_volt_min, bat_volt_red);
+  voltage_dash.AddBand("yellow", bat_volt_red, bat_volt_yellow);
+  voltage_dash.AddBand("green", bat_volt_yellow, bat_volt_max);
+
+  // SOC:
+  dash_gauge_t soc_dash("SOC ",Percentage);
+  soc_dash.SetMinMax(0, 100);
+  soc_dash.AddBand("red", 0, 12.5);
+  soc_dash.AddBand("yellow", 12.5, 25);
+  soc_dash.AddBand("green", 25, 100);
+
+  // Efficiency:
+  dash_gauge_t eff_dash(NULL,WattHoursPK);
+  eff_dash.SetMinMax(0, 300);
+  eff_dash.AddBand("green", 0, 150);
+  eff_dash.AddBand("yellow", 150, 250);
+  eff_dash.AddBand("red", 250, 300);
+
+  // Power:
+  dash_gauge_t power_dash(NULL,kW);
+  power_dash.SetMinMax(-40, 80);
+  power_dash.AddBand("violet", -40, 0);
+  power_dash.AddBand("green", 0, 40);
+  power_dash.AddBand("yellow", 40, 60);
+  power_dash.AddBand("red", 60, 80);
+
+  // Charger temperature:
+  dash_gauge_t charget_dash("CHG ",Celcius);
+  charget_dash.SetMinMax(20, 80);
+  charget_dash.SetTick(20);
+  charget_dash.AddBand("normal", 20, 65);
+  charget_dash.AddBand("red", 65, 80);
+
+  // Battery temperature:
+  dash_gauge_t batteryt_dash("BAT ",Celcius);
+  batteryt_dash.SetMinMax(-15, 65);
+  batteryt_dash.SetTick(25);
+  batteryt_dash.AddBand("red", -15, 0);
+  batteryt_dash.AddBand("normal", 0, 50);
+  batteryt_dash.AddBand("red", 50, 65);
+
+  // Inverter temperature:
+  dash_gauge_t invertert_dash("PEM ",Celcius);
+  invertert_dash.SetMinMax(20, 80);
+  invertert_dash.SetTick(20);
+  invertert_dash.AddBand("normal", 20, 70);
+  invertert_dash.AddBand("red", 70, 80);
+
+  // Motor temperature:
+  dash_gauge_t motort_dash("MOT ",Celcius);
+  motort_dash.SetMinMax(50, 125);
+  motort_dash.SetTick(25);
+  motort_dash.AddBand("normal", 50, 110);
+  motort_dash.AddBand("red", 110, 125);
+
+  std::ostringstream str;
+  str << "yAxis: ["
+      << speed_dash << "," // Speed
+      << voltage_dash << "," // Voltage
+      << soc_dash << "," // SOC
+      << eff_dash << "," // Efficiency
+      << power_dash << "," // Power
+      << charget_dash << "," // Charger temperature
+      << batteryt_dash << "," // Battery temperature
+      << invertert_dash << "," // Inverter temperature
+      << motort_dash // Motor temperature
+      << "]";
+  cfg.gaugeset1 = str.str();
 }
+
+#endif //CONFIG_OVMS_COMP_WEBSERVER

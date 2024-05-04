@@ -34,7 +34,9 @@
 
 #include "vehicle.h"
 #include "metrics_standard.h"
+#ifdef CONFIG_OVMS_COMP_WEBSERVER
 #include "ovms_webserver.h"
+#endif
 #include "mg_obd_pids.h"
 #include "mg_poll_states.h"
 
@@ -50,7 +52,6 @@
 #define CAR_UNRESPONSIVE_THRESHOLD 3 //seconds. If reaches this threshold, GWM state will change back to Unknown.
 #define CHARGING_THRESHOLD 12.9 //Volts. If voltage is lower than this, we say 1. 12V battery is not charging and 2. we should sleep OVMS to avoid draining battery too low
 #define DEFAULT_BMS_VERSION 1 //Corresponding to the BMSDoDLimits array element
-#define WLTP_RANGE 263.0 //km
 #define TRANSITION_TIMEOUT 50 //s. Number of seconds after 12V goes below CHARGING_THRESHOLD to stay in current state before going to sleep.
 
 namespace
@@ -64,8 +65,9 @@ typedef struct
 
 const BMSDoDLimits_t BMSDoDLimits[] =
 {
-    {6, 97}, //Pre Jan 2021 BMS firmware DoD range 6 - 97
-    {2.5, 94} //Jan 2021 BMS firmware DoD range 2.5 - 94
+    {60.0, 970.0}, //Pre Jan 2021 BMS firmware DoD range 60 - 970
+    {25.0, 940.0}, //Jan 2021 BMS firmware DoD range 25 - 940
+    {25.0, 930.0}  //Jan EU4 BMS firmware DoD range 25 - 930
 };
 
 typedef struct{
@@ -89,6 +91,9 @@ class OvmsVehicleMgEv : public OvmsVehicle
     bool SetFeature(int key, const char* value) override;
     const std::string GetFeature(int key) override;
 
+    // OVMS shell commands
+    OvmsCommand *cmd_xmg;
+
     OvmsMetricFloat* m_bat_pack_voltage;
     OvmsMetricFloat* m_bat_voltage_vcu;
     OvmsMetricFloat* m_bat_coolant_temp;
@@ -111,11 +116,19 @@ class OvmsVehicleMgEv : public OvmsVehicle
     OvmsMetricBool *m_bcm_auth; // True if BCM is authenticated, false if not
     OvmsMetricInt *m_gwm_task, *m_bcm_task; // Current ECU tasks that we are awaiting response for manual frame handling so we know which function to use to handle the responses.
     OvmsMetricInt *m_ignition_state; // For storing state of start switch
+    //OvmsMetricFloat *m_trip_start; // Trip start odometer reading
+    OvmsMetricBool *m_enable_polling; //Flag to enable polling
+    OvmsMetricFloat *m_trip_consumption; // Trip consumption
+    OvmsMetricFloat *m_avg_consumption; // Average consumption
+    OvmsMetricFloat *m_batt_capacity; // Battery Capacity
+    OvmsMetricFloat *m_max_dc_charge_rate; // Maximum Charge Rate
+    OvmsMetricFloat *m_dod_lower; // Battery DoD lower value used to calculate SOC
+    OvmsMetricFloat *m_dod_upper; // Battery DoD upper value used to calculate SOC
 
   protected:
     void ConfigChanged(OvmsConfigParam* param) override;
 
-    void IncomingPollReply(canbus* bus, uint16_t type, uint16_t pid, uint8_t* data, uint8_t length, uint16_t remain) override;
+    void IncomingPollReply(const OvmsPoller::poll_job_t &job, uint8_t* data, uint8_t length) override;
 
     void IncomingFrameCan1(CAN_frame_t* p_frame) override;
     void IncomingFrameCan2(CAN_frame_t* p_frame) override;
@@ -125,20 +138,43 @@ class OvmsVehicleMgEv : public OvmsVehicle
     int GetNotifyChargeStateDelay(const char* state) override;
 
 	void processEnergy();
+    void GWMAwake(canbus* currentBus);
+    void GWMUnlocked();
+    void RetryCheckState();
+    void GWMUnknown();
+    
+    enum class GWMStates
+    {
+        Unknown,                //Unknown state
+        CheckingState,            //Checking what state GWM is in
+        Awake,                     //Awake but don't know if locked or unlocked. Currently unused.
+        Unlocked,                //Awake and unlocked - can get parameters
+        WaitToRetryCheckState    //Waiting, doing nothing for a set amount of time before retrying check state
+    };
+
+    // Counter for waiting to change GWM state back to Unknown to restart state check process
+    uint8_t m_RetryCheckStateWaitCount = 0;
+    // Remember if we are active so when we go to sleep, we can do certain tasks once
+    bool m_OVMSActive = true;
 
     static void WakeUp(void* self);
     void NotifyVehicleIdling() override;
     canbus* IdToBus(int id);
     void ConfigurePollInterface(int bus);
 
+    // Trip length & SOC/energy consumption:
+        void ResetTripCounters();
+        void UpdateTripCounters();
+    
     /**
      * Form the poll list for OVMS to use by combining the common and variant specific lists.
      * @param SpecificPollData Variant specific poll list to add to common list
      * @param DataSize sizeof(SpecificPollData)
      */
-    void ConfigurePollData(const OvmsVehicle::poll_pid_t *SpecificPollData, size_t DataSize);
+    void ConfigurePollData(const OvmsPoller::poll_pid_t *SpecificPollData, size_t DataSize);
     // Form the poll list for OVMS to use by using only the common list
     void ConfigurePollData();
+    void ConfigureMG5PollData(const OvmsPoller::poll_pid_t *SpecificPollData, size_t DataSize);
 
     // Integer to string without padding
     static string IntToString(int x);
@@ -168,7 +204,7 @@ class OvmsVehicleMgEv : public OvmsVehicle
     //  * @param ManualPolls Poll items to manually poll
     //  * @param ManualPollSize sizeof(ManualPolls)
     //  */
-    // void SetupManualPolls(const OvmsVehicle::poll_pid_t *ManualPolls, size_t ManualPollSize);
+    // void SetupManualPolls(const OvmsPoller::poll_pid_t *ManualPolls, size_t ManualPollSize);
     // // Loop through manual poll list and send a request one by one
     // void SendManualPolls(canbus* currentBus, uint32_t ticker);
 
@@ -177,6 +213,7 @@ class OvmsVehicleMgEv : public OvmsVehicle
     static void AuthenticateECUShell(int verbosity, OvmsWriter* writer, OvmsCommand* cmd, int argc, const char* const* argv);
     static void DRLCommandShell(int verbosity, OvmsWriter* writer, OvmsCommand* cmd, int argc, const char* const* argv);
     static void DRLCommandWithAuthShell(int verbosity, OvmsWriter* writer, OvmsCommand* cmd, int argc, const char* const* argv);
+    static void PollsCommandShell(int verbosity, OvmsWriter* writer, OvmsCommand* cmd, int argc, const char* const* argv);
 
     enum class GWMTasks
     {
@@ -209,7 +246,7 @@ class OvmsVehicleMgEv : public OvmsVehicle
     // The polling structure, this is stored on external RAM which should be no slower
     // than accessing a const data structure as the Flash is stored externally on the
     // same interface and will be cached in the same way
-    OvmsVehicle::poll_pid_t* m_pollData = nullptr;
+    OvmsPoller::poll_pid_t* m_pollData = nullptr;
     // A temporary store for the VIN
     char m_vin[18];
 	  // Store cumulative energy charged
@@ -222,8 +259,7 @@ class OvmsVehicleMgEv : public OvmsVehicle
     uint32_t m_afterRunTicker = 0;
 
   private:
-    // OVMS shell commands
-    OvmsCommand *m_cmdSoftver, *m_cmdAuth, *m_cmdDRL, *m_cmdDRLNoAuth;
+    //OvmsCommand *m_cmdSoftver, *m_cmdAuth, *m_cmdDRL, *m_cmdDRLNoAuth;
     // The responses from the software version queries. First element of tuple = ECU ID. Second element of tuple = software version character vector response. Third element of tuple = response data bytes remaining, should be 0 after finished.
     std::vector<std::tuple<uint32_t, std::vector<char>, uint16_t>> m_versions;
     // True when getting software versions from ECUs
@@ -238,6 +274,10 @@ class OvmsVehicleMgEv : public OvmsVehicle
     int calcMinutesRemaining(int target_soc, charging_profile charge_steps[]);
     bool soc_limit_reached;
     bool range_limit_reached;
+
+    double m_odo_trip;
+    uint32_t m_tripfrac_reftime;
+    float m_tripfrac_refspeed;
 
     // mg_configuration.cpp
     int CanInterface();
@@ -309,7 +349,13 @@ class OvmsVehicleMgEv : public OvmsVehicle
   public:
     void WebInit();
     void WebDeInit();
+    void Mg5WebInit();
+    void FeaturesWebInit();
+    void FeaturesWebDeInit();
+    void VersionWebDeInit();
     static void WebCfgFeatures(PageEntry_t& p, PageContext_t& c);
+    static void MG5WebCfgFeatures(PageEntry_t &p, PageContext_t &c);
+    static void MG5WebCfgVersion(PageEntry_t &p, PageContext_t &c);
     static void WebCfgBattery(PageEntry_t& p, PageContext_t& c);
     void GetDashboardConfig(DashboardConfig& cfg);
     static void WebDispChgMetrics(PageEntry_t &p, PageContext_t &c);

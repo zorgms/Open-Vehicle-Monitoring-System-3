@@ -65,6 +65,7 @@
 #define MS_M_EGPIO_MONITOR          "m.egpio.monitor"
 #define MS_M_EGPIO_OUTPUT           "m.egpio.output"
 #endif //CONFIG_OVMS_COMP_MAX7317
+#define MS_M_OBD2ECU_ON             "m.obdc2ecu.on"
 
 #define MS_S_V2_CONNECTED           "s.v2.connected"
 #define MS_S_V2_PEERS               "s.v2.peers"
@@ -242,6 +243,9 @@
 #define MS_V_POS_GPSSPEED           "v.p.gpsspeed"
 #define MS_V_POS_ODOMETER           "v.p.odometer"
 #define MS_V_POS_TRIP               "v.p.trip"
+#define MS_V_POS_VALET_LATITUDE     "v.p.valet.latitude"
+#define MS_V_POS_VALET_LONGITUDE    "v.p.valet.longitude"
+#define MS_V_POS_VALET_DISTANCE     "v.p.valet.distance"
 
 #define MS_V_TPMS_FL_T              "v.tp.fl.t"
 #define MS_V_TPMS_FR_T              "v.tp.fr.t"
@@ -280,7 +284,7 @@ class MetricsStandard
     OvmsMetricInt*    ms_m_tasks;
     OvmsMetricInt*    ms_m_freeram;
     OvmsMetricInt*    ms_m_monotonic;
-    OvmsMetricInt*    ms_m_timeutc;
+    OvmsMetricInt64*  ms_m_timeutc;
 
     OvmsMetricString* ms_m_net_type;                      // none, wifi, modem
     OvmsMetricInt*    ms_m_net_sq;                        // Network signal quality [dbm]
@@ -299,6 +303,7 @@ class MetricsStandard
     OvmsMetricBitset<10,0>* ms_m_egpio_output;            // EGPIO (MAX7317) output port state
     OvmsMetricBitset<10,0>* ms_m_egpio_monitor;           // EGPIO (MAX7317) input monitoring state
 #endif //CONFIG_OVMS_COMP_MAX7317
+    OvmsMetricBool* ms_m_obd2ecu_on;                      // OBD2ECU process is on.
 
     OvmsMetricBool*   ms_s_v2_connected;                  // True = V2 server connected [1]
     OvmsMetricInt*    ms_s_v2_peers;                      // V2 clients connected [1]
@@ -484,7 +489,7 @@ class MetricsStandard
     OvmsMetricString* ms_v_env_cabinintake;               // Cabin intake type (fresh, recirc, etc)
     OvmsMetricString* ms_v_env_cabinvent;                 // Cabin vent type (comma-separated list of feet, face, screen, etc)
     OvmsMetricInt*    ms_v_env_service_range;             // Distance to next scheduled maintenance/service [km]
-    OvmsMetricInt*    ms_v_env_service_time;              // Time to next scheduled maintenance/service [Seconds]
+    OvmsMetricInt64*  ms_v_env_service_time;            // Time of scheduled maintenance/service [DateLocal]
 
     //
     // Position / location metrics
@@ -494,7 +499,7 @@ class MetricsStandard
     OvmsMetricFloat*  ms_v_pos_gpshdop;                   // Horizontal dilution of precision (smaller=better)
     OvmsMetricInt*    ms_v_pos_satcount;
     OvmsMetricInt*    ms_v_pos_gpssq;                     // GPS signal quality [%] (<30 unusable, >50 good, >80 excellent)
-    OvmsMetricInt*    ms_v_pos_gpstime;                   // Time (UTC) of GPS coordinates [Seconds]
+    OvmsMetricInt64*  ms_v_pos_gpstime;                   // Time (UTC) of GPS coordinates [Seconds]
     OvmsMetricFloat*  ms_v_pos_latitude;
     OvmsMetricFloat*  ms_v_pos_longitude;
     OvmsMetricString* ms_v_pos_location;                  // Name of current location if defined
@@ -505,6 +510,9 @@ class MetricsStandard
     OvmsMetricFloat*  ms_v_pos_gpsspeed;                  // GPS speed over ground [kph]
     OvmsMetricFloat*  ms_v_pos_odometer;
     OvmsMetricFloat*  ms_v_pos_trip;
+    OvmsMetricFloat*  ms_v_pos_valet_latitude;
+    OvmsMetricFloat*  ms_v_pos_valet_longitude;
+    OvmsMetricFloat*  ms_v_pos_valet_distance;
 
     //
     // TPMS: tyre monitoring metrics

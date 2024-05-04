@@ -18,7 +18,7 @@
 # -- Project information -----------------------------------------------------
 
 project = 'Open Vehicles'
-copyright = '2019-2020, Open Vehicles Developers'
+copyright = '2019-2024, Open Vehicles Developers'
 author = 'Open Vehicle Developers'
 
 
@@ -28,7 +28,7 @@ author = 'Open Vehicle Developers'
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
 extensions = [
-  'm2r',
+  'm2r2',
 ]
 
 # Add any paths that contain templates here, relative to this directory.

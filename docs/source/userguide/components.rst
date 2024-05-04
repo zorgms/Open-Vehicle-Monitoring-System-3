@@ -45,7 +45,7 @@ Cellular Modem Option and GSM Antenna
 
 The cellular modem option allows you to control your vehicle when out of wifi coverage range. The majority of OVMS users choose this option, and you will require it if you want to monitor your vehicle when away from home or office.
 
-OVMS modules sold in USA and Europe are provided with a Hologram SIM card pre-installed. This low cost service allows you to get cellular connectivity simply. It also allows you to roam between countries without worry. For modules purchased from China, we recommend you purchase a Hologram SIM directly from the hologram.io store (also available on Amazon).
+OVMS recommends Hologram SIM cards and service, although note that any compatible 2G/3G/4G SIM card and service should work, and the use of Hologram is not required.
 
 Depending on settings, verbosity towards the OVMS server, rhythm of GPS tracking, etc, OVMS v3 will use between 1 and 3 Megabytes per month of data (when using the v2 server protocol).
 
@@ -97,6 +97,31 @@ OVMS Server v3
 --------------
 
 The OVMS Server v3 protocol is MQTT. This is an industry standard protocol, and means an OVMS v3 module can communicate with any standard MQTT server. While this is the future of OVMS, support for this is experimental at the moment and production users should use OVMS Server v2 protocol.
+
+By default, OMVS Server v3 transmits all metrics. This can be adjusted by modifying the ``server.v3`` ``metrics.include`` and ``metrics.exclude`` configuration parameters.
+
+The ``metrics.include`` and ``metrics.exclude`` parameters should contain a comma separate list of metric names with optional leading or trailing wildcards.
+
+Metrics names matching the include list and **not matching** the exclude list will be transmitted. Note that if ``metrics.include`` is not defined or empty, all metric names will be included.
+
+^^^^^^^^
+Examples
+^^^^^^^^
+
+Only send the ``s.v3.connected`` and ``v.b.soc`` metrics::
+
+  OVMS# config set server.v3 metrics.include s.v3.connected,v.b.soc
+  OVMS# config rm server.v3 metrics.exclude
+
+Send all metrics except ``v.b.soc``::
+
+  OVMS# config rm server.v3 metrics.include
+  OVMS# config set server.v3 metrics.exclude v.b.soc
+
+Send all ``v.b`` metrics except ``v.b.soc``::
+
+  OVMS# config set server.v3 metrics.include v.b.*
+  OVMS# config set server.v3 metrics.exclude v.b.soc
 
 -------------------------------
 Upgrading from OVMS v1/v2 to v3

@@ -52,6 +52,9 @@
 
 using namespace std;
 
+typedef std::vector<OvmsPoller::poll_pid_t, ExtRamAllocator<OvmsPoller::poll_pid_t>> poll_vector_t;
+typedef std::initializer_list<const OvmsPoller::poll_pid_t> poll_list_t;
+
 class OvmsVehicleSmartED : public OvmsVehicle
 {
   public:
@@ -60,16 +63,20 @@ class OvmsVehicleSmartED : public OvmsVehicle
     static OvmsVehicleSmartED* GetInstance(OvmsWriter* writer=NULL);
 
   public:
-    void IncomingFrameCan1(CAN_frame_t* p_frame);
-    void IncomingFrameCan2(CAN_frame_t* p_frame);
-    void IncomingPollReply(canbus* bus, uint16_t type, uint16_t pid, uint8_t* data, uint8_t length, uint16_t mlremain);
-    void IncomingPollError(canbus* bus, uint16_t type, uint16_t pid, uint16_t code);
+    void IncomingFrameCan1(CAN_frame_t* p_frame) override;
+    void IncomingFrameCan2(CAN_frame_t* p_frame) override;
+    void IncomingPollReply(const OvmsPoller::poll_job_t &job, uint8_t* data, uint8_t length) override;
+    void IncomingPollError(const OvmsPoller::poll_job_t &job, uint16_t code) override;
     char m_vin[18];
 
   public:
+#ifdef CONFIG_OVMS_COMP_WEBSERVER
     void WebInit();
     void WebDeInit();
+#endif
     void ObdInitPoll();
+    void ObdModifyPoll();
+#ifdef CONFIG_OVMS_COMP_WEBSERVER
     static void WebCfgFeatures(PageEntry_t& p, PageContext_t& c);
     static void WebCfgBattery(PageEntry_t& p, PageContext_t& c);
     static void WebCfgCommands(PageEntry_t& p, PageContext_t& c);
@@ -77,23 +84,25 @@ class OvmsVehicleSmartED : public OvmsVehicle
     static void WebCfgBmsCellMonitor(PageEntry_t& p, PageContext_t& c);
     static void WebCfgBmsCellCapacity(PageEntry_t& p, PageContext_t& c);
     static void WebCfgEco(PageEntry_t& p, PageContext_t& c);
-    void ConfigChanged(OvmsConfigParam* param);
+    static void WebCfgACPoll(PageEntry_t& p, PageContext_t& c);
+#endif
+    void ConfigChanged(OvmsConfigParam* param) override;
     bool SetFeature(int key, const char* value);
     const std::string GetFeature(int key);
     bool CommandSetRecu(bool on);
     bool SetRecu(int mode);
 
   public:
-    virtual vehicle_command_t CommandSetChargeCurrent(uint16_t limit);
-    virtual vehicle_command_t CommandStat(int verbosity, OvmsWriter* writer);
-    virtual vehicle_command_t CommandWakeup();
-    virtual vehicle_command_t CommandSetChargeTimer(bool timeron, int hours, int minutes);
-    virtual vehicle_command_t CommandClimateControl(bool enable);
-    virtual vehicle_command_t CommandLock(const char* pin);
-    virtual vehicle_command_t CommandUnlock(const char* pin);
-    virtual vehicle_command_t CommandHomelink(int button, int durationms=1000);
-    virtual vehicle_command_t CommandActivateValet(const char* pin);
-    virtual vehicle_command_t CommandDeactivateValet(const char* pin);
+    vehicle_command_t CommandSetChargeCurrent(uint16_t limit) override;
+    vehicle_command_t CommandStat(int verbosity, OvmsWriter* writer) override;
+    vehicle_command_t CommandWakeup() override;
+    vehicle_command_t CommandSetChargeTimer(bool timeron, int hours, int minutes);
+    vehicle_command_t CommandClimateControl(bool enable) override;
+    vehicle_command_t CommandLock(const char* pin) override;
+    vehicle_command_t CommandUnlock(const char* pin) override;
+    vehicle_command_t CommandHomelink(int button, int durationms=1000) override;
+    vehicle_command_t CommandActivateValet(const char* pin) override;
+    vehicle_command_t CommandDeactivateValet(const char* pin) override;
     virtual vehicle_command_t CommandTrip(int verbosity, OvmsWriter* writer);
     void BmsDiag(int verbosity, OvmsWriter* writer);
     void printRPTdata(int verbosity, OvmsWriter* writer);
@@ -105,20 +114,23 @@ class OvmsVehicleSmartED : public OvmsVehicle
     static void xse_trip(int verbosity, OvmsWriter* writer, OvmsCommand* cmd, int argc, const char* const* argv);
     static void xse_bmsdiag(int verbosity, OvmsWriter* writer, OvmsCommand* cmd, int argc, const char* const* argv);
     static void xse_RPTdata(int verbosity, OvmsWriter* writer, OvmsCommand* cmd, int argc, const char* const* argv);
+    static void xse_ACPoll(int verbosity, OvmsWriter* writer, OvmsCommand* cmd, int argc, const char* const* argv);
 
   protected:
     int m_reboot_ticker;
-    virtual void Ticker1(uint32_t ticker);
-    virtual void Ticker10(uint32_t ticker);
-    virtual void Ticker60(uint32_t ticker);
+    uint16_t m_last_pid;
+
+    void Ticker1(uint32_t ticker) override;
+    void Ticker10(uint32_t ticker) override;
+    void Ticker60(uint32_t ticker) override;
     void GetDashboardConfig(DashboardConfig& cfg);
     virtual void CalculateEfficiency();
     void vehicle_smarted_car_on(bool isOn);    
     void NotifyTrip();
-    void NotifyValetEnabled();
-    void NotifyValetDisabled();
-    void NotifyValetHood();
-    void NotifyValetTrunk();
+    void NotifyValetEnabled() override;
+    void NotifyValetDisabled() override;
+    void NotifyValetHood() override;
+    void NotifyValetTrunk() override;
     void SaveStatus();
     void RestoreStatus();
     void HandleCharging();
@@ -163,6 +175,7 @@ class OvmsVehicleSmartED : public OvmsVehicle
     void PollReply_CEPC_VacuumPumpPress1(const char* reply_data, uint16_t reply_len);
     void PollReply_CEPC_VacuumPumpPress2(const char* reply_data, uint16_t reply_len);
     void PollReply_CEPC_BatteryAgeCondition(const char* reply_data, uint16_t reply_len);
+    void PollReply_ACPoll(uint16_t pid, const char* reply_data, uint16_t reply_len);
 
     OvmsCommand *cmd_xse;
     
@@ -283,6 +296,8 @@ class OvmsVehicleSmartED : public OvmsVehicle
 
   // BMS helpers
   protected:
+    float m_bms_raw_voltages[93];            // BMS raw voltages (current value)
+    float m_bms_bat_pack_avg;                 // BMS avg raw voltages
     float* m_bms_capacitys;                   // BMS Capacity (current value)
     float* m_bms_cmins;                       // BMS minimum Capacity seen (since reset)
     float* m_bms_cmaxs;                       // BMS maximum Capacity seen (since reset)
@@ -391,6 +406,47 @@ class OvmsVehicleSmartED : public OvmsVehicle
     static void shell_variant_coding_get_data(int verbosity, OvmsWriter* writer, OvmsCommand* cmd, int argc, const char* const* argv);
     static void shell_variant_coding_set_data(int verbosity, OvmsWriter* writer, OvmsCommand* cmd, int argc, const char* const* argv);
     static void shell_variant_coding_ecu_reset(int verbosity, OvmsWriter* writer, OvmsCommand* cmd, int argc, const char* const* argv);
+
+  protected:
+    poll_vector_t       m_poll_vector;              // List of PIDs to poll
+    
+    int                 m_cfg_cell_interval_drv;    // Cell poll interval while driving, default 15 sec.
+    int                 m_cfg_cell_interval_chg;    // … while charging, default 60 sec.
+    int                 m_cfg_cell_interval_awk;    // … while awake, default 60 sec.
+  
+  protected:
+    void PollACstatus(int verbosity, OvmsWriter* writer);
+    void PollRunFinished() override;
+    
+    bool poll_AC;
+    
+    OvmsMetricFloat* mt_dt_ioc_hv;  //DT_IOC_HV_PTC_Ansteuern
+    OvmsMetricFloat* mt_dt_lid_10;  //DT_LID_10_CAN_Aussentemperatur_CAN_Aussentemperatur
+    OvmsMetricFloat* mt_dt_lid_11;  //DT_LID_11_System_Aussentemperatur_System_Aussentemperatur
+    OvmsMetricFloat* mt_dt_lid_12;  //DT_LID_12_Innentemperatur_Innentemperatur
+    OvmsMetricFloat* mt_dt_lid_00;  //DT_LID_00_Bordspannung_Bordspannung
+    OvmsMetricFloat* mt_dt_lid_30;  //DT_LID_30_Eingestellter_Wert_Drehschalter_Temperatur_Eingest
+    OvmsMetricFloat* mt_dt_lid_56;  //DT_LID_56_Ptc_Temperatur_Ptc_Temperatur
+    OvmsMetricFloat* mt_dt_lid_63;  //DT_LID_63_Sollwert_HV_PTC_Sollwert_HV_PTC
+    OvmsMetricFloat* mt_dt_lid_65;  //DT_LID_65_Istwert_HV_Versorgung_PTC_Istwert_HV_Versorgung
+    OvmsMetricFloat* mt_dt_lid_6b;  //DT_LID_6B_Vorhandene_Leistung_fuer_Kabinen_Vorbedingung_
+    OvmsMetricFloat* mt_dt_lid_70;  //DT_LID_70_HV_Strom_HV_PTC_Strom
+    OvmsMetricString* mt_dt_lid_6d;   //DT_LID_6D_Status_Sicherheitsabschaltung_HV_PTC_Status
+    OvmsMetricString* mt_dt_lid_6e_1; //DT_LID_6E_Status_Sollwert_Uebernahme_HV_PTC_Strang_1
+    OvmsMetricString* mt_dt_lid_6e_2; //DT_LID_6E_Status_Sollwert_Uebernahme_HV_PTC_Strang_1
+    OvmsMetricString* mt_dt_lid_6e_3; //DT_LID_6E_Status_Sollwert_Uebernahme_HV_PTC_Strang_1
+    OvmsMetricString* mt_dt_lid_6e_4; //DT_LID_6E_Status_Sollwert_Uebernahme_HV_PTC_Strang_1
+    OvmsMetricString* mt_dt_lid_6f;   //DT_LID_6F_Betriebsstatus_HV_PTC_Status
+
+  // ed_dtc_poll.cpp
+  protected:
+    void DTCPollInit();
+
+  public:
+    static void shell_obd_showdtc(int verbosity, OvmsWriter* writer, OvmsCommand* cmd, int argc, const char* const* argv);
+    static void shell_obd_cleardtc(int verbosity, OvmsWriter* writer, OvmsCommand* cmd, int argc, const char* const* argv);
+    void DTCdecode(OvmsWriter* writer, std::string response, int typ);
+
 };
 
 #endif //#ifndef __VEHICLE_SMARTED_H__

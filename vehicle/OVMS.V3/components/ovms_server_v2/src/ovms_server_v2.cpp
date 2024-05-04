@@ -46,7 +46,9 @@ static const char *TAG = "ovms-server-v2";
 #include "esp_system.h"
 #include "ovms_utils.h"
 #include "ovms_boot.h"
+#if CONFIG_MG_ENABLE_SSL
 #include "ovms_tls.h"
+#endif
 
 // should this go in the .h or in the .cpp?
 typedef union {
@@ -205,13 +207,21 @@ static void OvmsServerV2MongooseCallback(struct mg_connection *nc, int ev, void 
         {
         if (MyOvmsServerV2->m_state == OvmsServerV2::Authenticating)
           {
+          // Auth issue, user needs to fix config:
           MyOvmsServerV2->SetStatus("Authentication error (wrong ID/password)", true, OvmsServerV2::WaitReconnect);
           MyOvmsServerV2->Reconnect(120);
           }
+        else if (MyOvmsServerV2->m_state == OvmsServerV2::Connecting ||
+                 MyOvmsServerV2->m_state == OvmsServerV2::Connected)
+          {
+          // Unscheduled connection drop:
+          MyOvmsServerV2->SetStatus("Connection lost, reconnecting", true, OvmsServerV2::WaitReconnect);
+          MyOvmsServerV2->Reconnect(10);
+          }
         else
           {
-          MyOvmsServerV2->SetStatus("Disconnected", false, OvmsServerV2::WaitReconnect);
-          MyOvmsServerV2->Reconnect(60);
+          // Scheduled disconnect:
+          MyOvmsServerV2->SetStatus("Disconnected", false, OvmsServerV2::Disconnected);
           }
         }
       break;
@@ -363,7 +373,7 @@ void OvmsServerV2::ProcessServerMsg()
 
     delete pm_crypto1;
     delete pm_crypto2;
-    delete d;
+    delete[] d;
     ESP_LOGI(TAG, "Decoded Paranoid Msg: %s",line.c_str());
     }
 
@@ -710,7 +720,24 @@ void OvmsServerV2::ProcessCommand(const char* payload)
         }
       break;
     case 49: // Send raw AT command
-      *buffer << "MP-0 c" << command << ",2";
+      if (!sep)
+        *buffer << "MP-0 c" << command << ",1,No command";
+      else
+        {
+#ifdef CONFIG_OVMS_COMP_CELLULAR
+        std::string cellcmd = "cellular cmd ";
+        cellcmd += ++sep;
+        std::string cellres = BufferedShell::ExecuteCommand(cellcmd, true);
+        if (cellres.empty())
+          *buffer << "MP-0 c" << command << ",1,Timeout/no response";
+        else if (cellres.find("ERROR") != std::string::npos)
+          *buffer << "MP-0 c" << command << ",1," << cellres;
+        else
+          *buffer << "MP-0 c" << command << ",0," << cellres;
+#else // #ifdef CONFIG_OVMS_COMP_CELLULAR
+        *buffer << "MP-0 c" << command << ",1,No modem";
+#endif // #ifdef CONFIG_OVMS_COMP_CELLULAR
+        }
       break;
     default:
       *buffer << "MP-0 c" << command << ",2";
@@ -761,7 +788,7 @@ bool OvmsServerV2::Transmit(const std::string& message)
     strcat(s,code);
     base64encode(d, len-6, (uint8_t*)s+8);
     // The messdage is now in paranoid mode...
-    delete d;
+    delete[] d;
     delete pm_crypto1;
     delete pm_crypto2;
     }
@@ -863,8 +890,14 @@ void OvmsServerV2::Connect()
   opts.error_string = &err;
   if (m_tls)
     {
+#if CONFIG_MG_ENABLE_SSL
     opts.ssl_ca_cert = MyOvmsTLS.GetTrustedList();
     opts.ssl_server_name = m_server.c_str();
+#else
+    ESP_LOGE(TAG, "mg_connect(%s) failed: SSL support disabled", address.c_str());
+    SetStatus("Error: Connection failed (SSL support disabled)", true, Undefined);
+    return;
+#endif
     }
   if ((m_mgconn = mg_connect_opt(mgr, address.c_str(), OvmsServerV2MongooseCallback, opts)) == NULL)
     {
@@ -1067,7 +1100,7 @@ void OvmsServerV2::TransmitMsgStat(bool always)
     << ","
     << StandardMetrics.ms_v_bat_voltage->AsFloat()
     << ","
-    << StandardMetrics.ms_v_bat_soh->AsInt()
+    << StandardMetrics.ms_v_bat_soh->AsFloat()
     << ","
     << StandardMetrics.ms_v_charge_power->AsFloat()
     << ","
@@ -1738,7 +1771,7 @@ void OvmsServerV2::TransmitNotifyData()
     size += buffer.str().size();
     if (now - starttime >= 300 || cnt == 5 || size >= 4000)
       {
-      ESP_LOGD(TAG, "TransmitNotifyData: used %d ms for %d records, %u bytes", now - starttime, cnt, size);
+      ESP_LOGD(TAG, "TransmitNotifyData: used %" PRId32 " ms for %d records, %u bytes", now - starttime, cnt, size);
       return;
       }
     }
@@ -1914,7 +1947,7 @@ void OvmsServerV2::EventListener(std::string event, void* data)
     {
     ConfigChanged((OvmsConfigParam*) data);
     }
-  else if (event == "location.alert.flatbed.moved")
+  else if (event == "location.alert.flatbed.moved" || event == "location.alert.valet.bounds")
     {
     m_now_gps = true;
     }
@@ -1947,9 +1980,8 @@ void OvmsServerV2::NetDown(std::string event, void* data)
 
 void OvmsServerV2::NetReconfigured(std::string event, void* data)
   {
-  ESP_LOGI(TAG, "Network was reconfigured: disconnect, and reconnect in 10 seconds");
-  SetStatus("Network was reconfigured: disconnect, and reconnect in 10 seconds", false, ConnectWait);
-  Reconnect(10);
+  SetStatus("Network was reconfigured: disconnect and reconnect", false, ConnectWait);
+  Reconnect(3);
   }
 
 void OvmsServerV2::NetmanInit(std::string event, void* data)
@@ -2138,6 +2170,7 @@ OvmsServerV2::OvmsServerV2(const char* name)
   MyEvents.RegisterEvent(TAG,"config.changed", std::bind(&OvmsServerV2::EventListener, this, _1, _2));
   MyEvents.RegisterEvent(TAG,"config.mounted", std::bind(&OvmsServerV2::EventListener, this, _1, _2));
   MyEvents.RegisterEvent(TAG,"location.alert.flatbed.moved", std::bind(&OvmsServerV2::EventListener, this, _1, _2));
+  MyEvents.RegisterEvent(TAG,"location.alert.valet.bounds", std::bind(&OvmsServerV2::EventListener, this, _1, _2));
 
   // read config:
   ConfigChanged(NULL);
@@ -2153,6 +2186,7 @@ OvmsServerV2::~OvmsServerV2()
   MyMetrics.DeregisterListener(TAG);
   MyEvents.DeregisterEvent(TAG);
   MyNotify.ClearReader(MyOvmsServerV2Reader);
+  SetStatus("Stopped", false, Disconnected);
   Disconnect();
   if (m_buffer)
     {
@@ -2194,8 +2228,13 @@ void ovmsv2_stop(int verbosity, OvmsWriter* writer, OvmsCommand* cmd, int argc, 
   if (MyOvmsServerV2 != NULL)
     {
     writer->puts("Stopping OVMS Server V2 connection (oscv2)");
-    delete MyOvmsServerV2;
+    OvmsServerV2 *instance = MyOvmsServerV2;
     MyOvmsServerV2 = NULL;
+    delete instance;
+    }
+  else
+    {
+    writer->puts("OVMS v2 server has not been started");
     }
   }
 

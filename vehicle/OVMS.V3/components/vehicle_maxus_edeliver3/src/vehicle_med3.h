@@ -33,7 +33,9 @@
 
 #include "vehicle.h"
 #include "metrics_standard.h"
+#ifdef CONFIG_OVMS_COMP_WEBSERVER
 #include "ovms_webserver.h"
+#endif
 #include "med3_pids.h"
 
 #include "freertos/timers.h"
@@ -71,8 +73,8 @@ class OvmsVehicleMaxed3 : public OvmsVehicle
   protected:
       void ConfigChanged(OvmsConfigParam* param) override;
       void PollerStateTicker();
-      void Ticker1(uint32_t ticker);
-      void IncomingPollReply(canbus* bus, uint16_t type, uint16_t pid, uint8_t* data, uint8_t length, uint16_t mlremain);
+      void Ticker1(uint32_t ticker) override;
+      void IncomingPollReply(const OvmsPoller::poll_job_t &job, uint8_t* data, uint8_t length) override;
       void processEnergy();
       float consumpRange;
       float hvpower;

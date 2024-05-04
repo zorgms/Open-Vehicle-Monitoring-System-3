@@ -49,22 +49,32 @@
  *   &  →  &amp;
  */
 std::string PageContext::encode_html(const char* text) {
-	std::string buf;
-	for (int i=0; i<strlen(text); i++) {
-		if (text[i] == '\"')
-			buf += "&quot;";
-		else if (text[i] == '\'')
-			buf += "&#x27;";
-		else if(text[i] == '<')
-			buf += "&lt;";
-		else if(text[i] == '>')
-			buf += "&gt;";
-		else if(text[i] == '&')
-			buf += "&amp;";
-		else
-			buf += text[i];
+  int len = strlen(text);
+  std::string buf;
+  buf.reserve(len);
+  for (int i=0; i < len; i++) {
+    char ch = text[i];
+    switch(ch) {
+    case '\"':
+      buf.append("&quot;");
+      break;
+    case '\'':
+      buf.append("&#x27;");
+      break;
+    case '<':
+      buf.append("&lt;");
+      break;
+    case '>':
+      buf.append("&gt;");
+      break;
+    case '&':
+      buf.append("&amp;");
+      break;
+    default:
+      buf.append(&ch,1);
+    }
   }
-	return buf;
+  return buf;
 }
 
 std::string PageContext::encode_html(std::string text) {
@@ -72,23 +82,31 @@ std::string PageContext::encode_html(std::string text) {
 }
 
 extram::string PageContext::encode_html(const extram::string& text) {
-	extram::string buf;
+  extram::string buf;
   buf.reserve(text.length() + 500);
-	for (int i=0; i<text.length(); i++) {
-		if (text[i] == '\"')
-			buf += "&quot;";
-		else if (text[i] == '\'')
-			buf += "&#x27;";
-		else if(text[i] == '<')
-			buf += "&lt;";
-		else if(text[i] == '>')
-			buf += "&gt;";
-		else if(text[i] == '&')
-			buf += "&amp;";
-		else
-			buf += text[i];
+  for (int i=0; i<text.length(); i++) {
+    char ch = text[i];
+    switch (ch) {
+    case '\"':
+      buf.append("&quot;");
+      break;
+    case '\'':
+      buf.append("&#x27;");
+      break;
+    case '<':
+      buf.append("&lt;");
+      break;
+    case '>':
+      buf.append("&gt;");
+      break;
+    case '&':
+      buf.append("&amp;");
+      break;
+    default:
+      buf.append(&ch,1);
+    }
   }
-	return buf;
+  return buf;
 }
 
 #define _attr(text) (encode_html(text).c_str())
@@ -102,11 +120,12 @@ extram::string PageContext::encode_html(const extram::string& text) {
  *   
  */
 std::string PageContext::make_id(const char* text) {
-	std::string buf;
+  std::string buf;
   char lc = 0;
-	for (int i=0; i<strlen(text); i++) {
-		if (isalnum(text[i]))
-			buf += (lc = tolower(text[i]));
+  int len = strlen(text);
+  for (int i=0; i<len; i++) {
+    if (isalnum(text[i]))
+      buf += (lc = tolower(text[i]));
     else if (lc && lc != '-')
       buf += (lc = '-');
   }
@@ -114,7 +133,7 @@ std::string PageContext::make_id(const char* text) {
     lc = buf.back();
     buf.pop_back();
   }
-	return buf;
+  return buf;
 }
 
 std::string PageContext::make_id(std::string text) {
@@ -361,7 +380,7 @@ void PageContext::input_slider(const char* label, const char* name, int size, co
       "<label class=\"control-label col-sm-3\" for=\"input-%s\">%s:</label>"
       "<div class=\"col-sm-9\">"
         "<div class=\"form-control slider\" data-default=\"%g\" data-reset=\"false\""
-        " data-value=\"%g\" data-min=\"%g\" data-max=\"%g\" data-step=\"%g\">"
+        " data-value=\"%g\" data-min=\"%g\" data-max=\"%g\" data-step=\"%g\" data-checked=\"%s\">"
           "<div class=\"slider-control form-inline\">"
             "<input class=\"slider-enable\" type=\"%s\" %s> "
             "<input class=\"form-control slider-value\" %s type=\"number\" style=\"width:%dpx;\""
@@ -380,6 +399,7 @@ void PageContext::input_slider(const char* label, const char* name, int size, co
     , _attr(name)
     , label
     , defval, value, min, max, step
+    , (enabled != 0) ? "true" : "false"
     , (enabled < 0) ? "hidden" : "checkbox" // -1 => no checkbox
     , (enabled > 0) ? "checked" : ""
     , (enabled == 0) ? "disabled" : ""
@@ -714,7 +734,8 @@ void OvmsWebServer::OutputReboot(PageEntry_t& p, PageContext_t& c)
 /**
  * OutputReconnect: output reconnect script
  */
-void OvmsWebServer::OutputReconnect(PageEntry_t& p, PageContext_t& c, const char* info /*=NULL*/)
+void OvmsWebServer::OutputReconnect(PageEntry_t& p, PageContext_t& c, const char* info /*=NULL*/,
+                                    const char* cmd /*=NULL*/)
 {
   c.printf(
     "<div class=\"alert alert-warning\">"
@@ -733,8 +754,16 @@ void OvmsWebServer::OutputReconnect(PageEntry_t& p, PageContext_t& c, const char
           "$(\"#dots\").append(\"•\");"
         "}"
       "}, 1000);"
-    "</script>"
     , info ? info : "Reconnecting…");
+
+  if (cmd) {
+    c.printf(
+      "loadcmd(\"%s\");"
+      , __attr(cmd));
+  }
+
+  c.print(
+    "</script>");
 }
 
 
@@ -808,9 +837,10 @@ void OvmsWebServer::HandleAsset(PageEntry_t& p, PageContext_t& c)
 
   char etag[50], current_time[50], last_modified[50];
   time_t t = (time_t) mg_time();
+  struct tm timeinfo;
   snprintf(etag, sizeof(etag), "\"%lx.%" INT64_FMT "\"", (unsigned long) mtime, (int64_t) size);
-  strftime(current_time, sizeof(current_time), "%a, %d %b %Y %H:%M:%S GMT", gmtime(&t));
-  strftime(last_modified, sizeof(last_modified), "%a, %d %b %Y %H:%M:%S GMT", gmtime(&mtime));
+  strftime(current_time, sizeof(current_time), "%a, %d %b %Y %H:%M:%S GMT", gmtime_r(&t, &timeinfo));
+  strftime(last_modified, sizeof(last_modified), "%a, %d %b %Y %H:%M:%S GMT", gmtime_r(&mtime, &timeinfo));
 
   mg_send_response_line(c.nc, 200, NULL);
   mg_printf(c.nc,
