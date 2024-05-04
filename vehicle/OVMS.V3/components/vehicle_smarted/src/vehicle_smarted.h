@@ -402,6 +402,15 @@ class OvmsVehicleSmartED : public OvmsVehicle
     OvmsMetricString* mt_dt_lid_6e_3; //DT_LID_6E_Status_Sollwert_Uebernahme_HV_PTC_Strang_1
     OvmsMetricString* mt_dt_lid_6e_4; //DT_LID_6E_Status_Sollwert_Uebernahme_HV_PTC_Strang_1
     OvmsMetricString* mt_dt_lid_6f;   //DT_LID_6F_Betriebsstatus_HV_PTC_Status
+
+  // ed_dtc_poll.cpp
+  protected:
+    void DTCPollInit();
+
+  public:
+    static void shell_obd_showdtc(int verbosity, OvmsWriter* writer, OvmsCommand* cmd, int argc, const char* const* argv);
+    static void shell_obd_cleardtc(int verbosity, OvmsWriter* writer, OvmsCommand* cmd, int argc, const char* const* argv);
+    void DTCdecode(OvmsWriter* writer, std::string response, int typ);
 };
 
 #endif //#ifndef __VEHICLE_SMARTED_H__

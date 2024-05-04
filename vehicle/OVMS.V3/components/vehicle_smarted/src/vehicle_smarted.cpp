@@ -102,6 +102,9 @@ OvmsVehicleSmartED::OvmsVehicleSmartED() : smarted_obd_rxwait(1,1) {
 
   m_last_pid = 0;
   m_reboot_ticker = 0;
+  m_cfg_cell_interval_drv = 0;
+  m_cfg_cell_interval_chg = 0;
+  m_cfg_cell_interval_awk = 0;
 
   // init commands:
   cmd_xse = MyCommandApp.RegisterCommand("xse","SmartED 451 Gen.3");
@@ -120,6 +123,7 @@ OvmsVehicleSmartED::OvmsVehicleSmartED() : smarted_obd_rxwait(1,1) {
 
   // init OBD2 poller:
   ObdInitPoll();
+  DTCPollInit();
 
   ConfigChanged(NULL);
 
