@@ -105,6 +105,7 @@ static const OvmsPoller::poll_pid_t smarted_polls[] =
   { 0x7E7, 0x7EF, VEHICLE_POLL_TYPE_OBDIIEXTENDED, 0xF190, {  0,300,600,600 }, 0, ISOTP_STD }, // rqBattVIN
 // { 0x7E7, 0x7EF, VEHICLE_POLL_TYPE_OBDIIEXTENDED, 0x0208, {  0,60,60,60 }, 0, ISOTP_STD }, // rqBattVolts
   { 0x7E7, 0x7EF, VEHICLE_POLL_TYPE_OBDIIEXTENDED, 0x0310, {  0,60,60,60 }, 0, ISOTP_STD }, // rqBattCapacity
+  { 0x7E7, 0x7EF, VEHICLE_POLL_TYPE_OBDIIEXTENDED, 0x030D, {  0,300,600,60 }, 0, ISOTP_STD }, // rqBattInternalResistanceCorrectionFactor
   { 0x7E7, 0x7EF, VEHICLE_POLL_TYPE_OBDIIEXTENDED, 0x0203, {  0,60,60,60 }, 0, ISOTP_STD }, // rqBattAmps
 //  { 0x7E7, 0x7EF, VEHICLE_POLL_TYPE_OBDIIEXTENDED, 0x0207, {  0,60,60,60 }, 0, ISOTP_STD }, // rqBattADCref
   { 0x7E7, 0x7EF, VEHICLE_POLL_TYPE_OBDIIEXTENDED, 0x0304, {  0,300,600,600 }, 0, ISOTP_STD }, // rqBattDate
@@ -137,6 +138,27 @@ static const OvmsPoller::poll_pid_t smarted_polls[] =
   { 0x7E5, 0x7ED, VEHICLE_POLL_TYPE_OBDIIEXTENDED, 0x6308, {  0,3600,3600,300 }, 0, ISOTP_STD }, // DT_Batterie_Alterszustand
 };
 
+static const OvmsPoller::poll_pid_t AC_polls[] =
+{
+  // { tx, rx, type, pid, {OFF,AWAKE,ON,CHARGING}, bus, protocol }
+ // { 0x7A2, 0x7A3, VEHICLE_POLL_TYPE_OBDIISESSION, 0x92, {  0,3600,3600,3600 }, 0, ISOTP_STD },
+ // { 0x7A2, 0x7A3, 0x30, 0x3101, {  0,60,60,60 }, 0, ISOTP_STD },
+  { 0x7A2, 0x7A3, VEHICLE_POLL_TYPE_OBDIIGROUP, 0x00, {  0,60,60,60 }, 0, ISOTP_STD },
+  { 0x7A2, 0x7A3, VEHICLE_POLL_TYPE_OBDIIGROUP, 0x10, {  0,60,60,60 }, 0, ISOTP_STD },
+  { 0x7A2, 0x7A3, VEHICLE_POLL_TYPE_OBDIIGROUP, 0x11, {  0,60,60,60 }, 0, ISOTP_STD },
+  { 0x7A2, 0x7A3, VEHICLE_POLL_TYPE_OBDIIGROUP, 0x12, {  0,60,60,60 }, 0, ISOTP_STD },
+  { 0x7A2, 0x7A3, VEHICLE_POLL_TYPE_OBDIIGROUP, 0x30, {  0,60,60,60 }, 0, ISOTP_STD },
+  { 0x7A2, 0x7A3, VEHICLE_POLL_TYPE_OBDIIGROUP, 0x56, {  0,60,60,60 }, 0, ISOTP_STD },
+  { 0x7A2, 0x7A3, VEHICLE_POLL_TYPE_OBDIIGROUP, 0x63, {  0,60,60,60 }, 0, ISOTP_STD },
+  { 0x7A2, 0x7A3, VEHICLE_POLL_TYPE_OBDIIGROUP, 0x65, {  0,60,60,60 }, 0, ISOTP_STD },
+  { 0x7A2, 0x7A3, VEHICLE_POLL_TYPE_OBDIIGROUP, 0x6B, {  0,60,60,60 }, 0, ISOTP_STD },
+  { 0x7A2, 0x7A3, VEHICLE_POLL_TYPE_OBDIIGROUP, 0x6D, {  0,60,60,60 }, 0, ISOTP_STD },
+  { 0x7A2, 0x7A3, VEHICLE_POLL_TYPE_OBDIIGROUP, 0x6E, {  0,60,60,60 }, 0, ISOTP_STD },
+  { 0x7A2, 0x7A3, VEHICLE_POLL_TYPE_OBDIIGROUP, 0x6F, {  0,60,60,60 }, 0, ISOTP_STD },
+  { 0x7A2, 0x7A3, VEHICLE_POLL_TYPE_OBDIIGROUP, 0x70, {  0,60,60,60 }, 0, ISOTP_STD },
+  POLL_LIST_END
+};
+
 void OvmsVehicleSmartED::ObdInitPoll() {
 
   m_bms_capacitys = NULL;
@@ -154,6 +176,8 @@ void OvmsVehicleSmartED::ObdInitPoll() {
 
   m_bms_limit_cmin = 1000;
   m_bms_limit_cmax = 22000;
+  
+  poll_AC = false;
 
   mt_v_bat_pack_cmin = new OvmsMetricFloat("xse.v.b.p.capacity.min", SM_STALE_HIGH, Other);
   mt_v_bat_pack_cmax = new OvmsMetricFloat("xse.v.b.p.capacity.max", SM_STALE_HIGH, Other);
@@ -210,6 +234,7 @@ void OvmsVehicleSmartED::ObdInitPoll() {
   mt_myBMS_BattVIN             = new OvmsMetricString("xse.mybms.batt.vin");
   mt_myBMS_HWrev               = new OvmsMetricVector<int>("xse.mybms.HW.rev", SM_STALE_HIGH, Other);
   mt_myBMS_SWrev               = new OvmsMetricVector<int>("xse.mybms.SW.rev", SM_STALE_HIGH, Other);
+  mt_myBMS_InternalResistance  = new OvmsMetricVector<float>("xse.mybms.internal.resistance", SM_STALE_HIGH, Other);
 
   mt_CEPC_Wippen               = new OvmsMetricBool("xse.cepc.wippen", SM_STALE_MID);
   
@@ -227,6 +252,24 @@ void OvmsVehicleSmartED::ObdInitPoll() {
   mt_CEPC_VaccumPumpPress1     = new OvmsMetricInt("xse.cepc.vaccum.pump.press1", SM_STALE_MID, Other);
   mt_CEPC_VaccumPumpPress2     = new OvmsMetricInt("xse.cepc.vaccum.pump.press2", SM_STALE_MID, Other);
   mt_CEPC_BatteryAgeCondition  = new OvmsMetricFloat("xse.cepc.battery.age.condition", SM_STALE_MID, Percentage);
+  
+  mt_dt_ioc_hv   = new OvmsMetricFloat("xse.ac.ioc.hv", SM_STALE_MIN, Percentage);
+  mt_dt_lid_10   = new OvmsMetricFloat("xse.ac.lid.10", SM_STALE_MIN, Celcius);
+  mt_dt_lid_11   = new OvmsMetricFloat("xse.ac.lid.11", SM_STALE_MIN, Celcius);
+  mt_dt_lid_12   = new OvmsMetricFloat("xse.ac.lid.12", SM_STALE_MIN, Celcius);
+  mt_dt_lid_00   = new OvmsMetricFloat("xse.ac.lid.00", SM_STALE_MIN, Volts);
+  mt_dt_lid_30   = new OvmsMetricFloat("xse.ac.lid.30", SM_STALE_MIN, Celcius);
+  mt_dt_lid_56   = new OvmsMetricFloat("xse.ac.lid.56", SM_STALE_MIN, Celcius);
+  mt_dt_lid_63   = new OvmsMetricFloat("xse.ac.lid.63", SM_STALE_MIN, Percentage);
+  mt_dt_lid_65   = new OvmsMetricFloat("xse.ac.lid.65", SM_STALE_MIN, Volts);
+  mt_dt_lid_6b   = new OvmsMetricFloat("xse.ac.lid.6b", SM_STALE_MIN, Watts);
+  mt_dt_lid_70   = new OvmsMetricFloat("xse.ac.lid.70", SM_STALE_MIN, Amps);
+  mt_dt_lid_6d   = new OvmsMetricString("xse.ac.lid.6d", SM_STALE_MIN);
+  mt_dt_lid_6e_1 = new OvmsMetricString("xse.ac.lid.6e.1", SM_STALE_MIN);
+  mt_dt_lid_6e_2 = new OvmsMetricString("xse.ac.lid.6e.2", SM_STALE_MIN);
+  mt_dt_lid_6e_3 = new OvmsMetricString("xse.ac.lid.6e.3", SM_STALE_MIN);
+  mt_dt_lid_6e_4 = new OvmsMetricString("xse.ac.lid.6e.4", SM_STALE_MIN);
+  mt_dt_lid_6f   = new OvmsMetricString("xse.ac.lid.6f", SM_STALE_MIN);
 
   // BMS configuration:
   BmsSetCellArrangementCapacity(93, 31);
@@ -249,6 +292,8 @@ void OvmsVehicleSmartED::ObdInitPoll() {
 }
 
 void OvmsVehicleSmartED::ObdModifyPoll() {
+
+  int pollstate = m_poll_state;
 
   PollSetPidList(m_can1, NULL);
   PollSetState(0);
@@ -274,6 +319,45 @@ void OvmsVehicleSmartED::ObdModifyPoll() {
   ESP_LOGI(TAG, "Poll vector: size=%d cap=%d", m_poll_vector.size(), m_poll_vector.capacity());
 
   PollSetPidList(m_can1, m_poll_vector.data());
+  PollSetState(pollstate);
+}
+
+void OvmsVehicleSmartED::PollACstatus(int verbosity, OvmsWriter* writer) {
+  int pollstate = m_poll_state;
+
+  if (mt_bus_awake->AsBool()) {
+    poll_AC = true;
+
+    canbus *obd;
+    obd = m_can1;
+
+    uint8_t data[8] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+    data[0] = 0x02;
+    data[1] = 0x10;
+    data[2] = 0x92;
+    obd->WriteStandard(0x7A2, 8, data);
+    vTaskDelay(50 / portTICK_PERIOD_MS);
+    data[0] = 0x03;
+    data[1] = 0x30;
+    data[2] = 0x31;
+    data[3] = 0x01;
+    obd->WriteStandard(0x7A2, 8, data);
+    vTaskDelay(50 / portTICK_PERIOD_MS);
+
+    PollSetPidList(m_can1, AC_polls);
+    PollSetThrottling(0);
+    PollSetState(pollstate);
+    ESP_LOGI(TAG, "ACPoll start");
+    writer->puts("get data");
+  } else writer->puts("error");
+}
+
+void OvmsVehicleSmartED::PollRunFinished(){
+  if(poll_AC) {
+    ObdModifyPoll();
+    poll_AC = false;
+    ESP_LOGI(TAG, "ACPoll stop");
+  }
 }
 
 /**
@@ -311,127 +395,137 @@ void OvmsVehicleSmartED::IncomingPollReply(const OvmsPoller::poll_job_t &job, ui
     // free(buf);
   
   // complete:
-  switch (job.pid) {
-    case 0x0201: // rqBattTemperatures
-      PollReply_BMS_BattTemp(rxbuf.data(), rxbuf.size());
-      break;
-    case 0x0202: // rqBattModuleTemperatures
-      PollReply_BMS_ModuleTemp(rxbuf.data(), rxbuf.size());
-      break;
-    case 0x0203: //rqBattAmps
-      PollReply_BMS_BattAmps(rxbuf.data(), rxbuf.size());
-      break;
-    case 0x0204: //rqBattHVstatus
-      PollReply_BMS_BattHVstatus(rxbuf.data(), rxbuf.size());
-      break;
-    case 0x0207: //rqBattADCref
-      PollReply_BMS_BattADCref(rxbuf.data(), rxbuf.size());
-      break;
-    case 0x0208: // rqBattVolts
-      PollReply_BMS_BattVolts(rxbuf.data(), rxbuf.size());
-      break;
-    case 0x0209: // rqBattIsolation
-      PollReply_BMS_BattIsolation(rxbuf.data(), rxbuf.size());
-      break;
-    case 0x0310: // rqBattCapacity
-      PollReply_BMS_BattCapacity(rxbuf.data(), rxbuf.size());
-      break;
-    case 0x030B: // rqBattHVContactorCyclesLeft
-      PollReply_BMS_BattHVContactorCyclesLeft(rxbuf.data(), rxbuf.size());
-      break;
-    case 0x030C: // rqBattHVContactorMax
-      PollReply_BMS_BattHVContactorMax(rxbuf.data(), rxbuf.size());
-      break;
-    case 0xD000: // rqBattHVContactorState
-      PollReply_BMS_BattHVContactorState(rxbuf.data(), rxbuf.size());
-      break;
-    case 0x0304: // rqBattDate
-      PollReply_BMS_BattDate(rxbuf.data(), rxbuf.size());
-      break;
-    case 0xF18C: // rqBattProdDate
-      PollReply_BMS_BattProdDate(rxbuf.data(), rxbuf.size());
-      break;
-    case 0xF150: //rqBattHWrev
-      PollReply_BMS_BattHWrev(rxbuf.data(), rxbuf.size());
-      break;
-    case 0xF151: //rqBattSWrev
-      PollReply_BMS_BattSWrev(rxbuf.data(), rxbuf.size());
-      break;
-    case 0xF190: // rqBattVIN
-      PollReply_BMS_BattVIN(rxbuf.data(), rxbuf.size());
-      break;
-    case 0xF111: // rqChargerPN_HW
-      PollReply_NLG6_ChargerPN_HW(rxbuf.data(), rxbuf.size());
-      break;
-    case 0x0226: // rqChargerVoltages
-      PollReply_NLG6_ChargerVoltages(rxbuf.data(), rxbuf.size());
-      break;
-    case 0x0225: // rqChargerAmps
-      PollReply_NLG6_ChargerAmps(rxbuf.data(), rxbuf.size());
-      break;
-    case 0x022A: // rqChargerSelCurrent
-      PollReply_NLG6_ChargerSelCurrent(rxbuf.data(), rxbuf.size());
-      break;
-    case 0x0223: // rqChargerTemperatures
-      PollReply_NLG6_ChargerTemperatures(rxbuf.data(), rxbuf.size());
-      break;
-    case 0x1001:
-      PollReply_CEPC_VC(rxbuf.data(), rxbuf.size());
-      break;
-    case 0x2047: // rqCoolingTemp
-      PollReply_CEPC_CoolingTemp(rxbuf.data(), rxbuf.size());
-      break;
-    case 0x230A: // rqCoolingPumpTemp
-      PollReply_CEPC_CoolingPumpTemp(rxbuf.data(), rxbuf.size());
-      break;
-    case 0x2308: // rqCoolingPumpLV
-      PollReply_CEPC_CoolingPumpLV(rxbuf.data(), rxbuf.size());
-      break;
-    case 0x2309: // rqCoolingPumpAmps
-      PollReply_CEPC_CoolingPumpAmps(rxbuf.data(), rxbuf.size());
-      break;
-    case 0xD032: // rqCoolingPumpRPM
-      PollReply_CEPC_CoolingPumpRPM(rxbuf.data(), rxbuf.size());
-      break;
-    case 0x6309: // rqCoolingPumpOTR
-      PollReply_CEPC_CoolingPumpOTR(rxbuf.data(), rxbuf.size());
-      break;
-    case 0xD041: // rqCoolingFanRPM
-      PollReply_CEPC_CoolingFanRPM(rxbuf.data(), rxbuf.size());
-      break;
-    case 0x630A: // rqCoolingFanOTR
-      PollReply_CEPC_CoolingFanOTR(rxbuf.data(), rxbuf.size());
-      break;
-    case 0x6321: // rqBatteryHeaterOTR
-      PollReply_CEPC_BatteryHeaterOTR(rxbuf.data(), rxbuf.size());
-      break;
-    case 0xD302: // rqBatteryHeaterON
-      PollReply_CEPC_BatteryHeaterON(rxbuf.data(), rxbuf.size());
-      break;
-    case 0x6303: // rqVacuumPumpOTR
-      PollReply_CEPC_VacuumPumpOTR(rxbuf.data(), rxbuf.size());
-      break;
-    case 0x2041: // rqVacuumPumpPress1
-      PollReply_CEPC_VacuumPumpPress1(rxbuf.data(), rxbuf.size());
-      break;
-    case 0x2043: // rqVacuumPumpPress2
-      PollReply_CEPC_VacuumPumpPress2(rxbuf.data(), rxbuf.size());
-      break;
-    case 0x6308: // DT_Batterie_Alterszustand
-      PollReply_CEPC_BatteryAgeCondition(rxbuf.data(), rxbuf.size());
-      break;
-    // Unknown: output
+  switch (job.moduleid_rec) {
+    case 0x7A3:
+      PollReply_ACPoll(job.pid, rxbuf.data(), rxbuf.size());
+    break;
     default: {
-      char *buf = NULL;
-      size_t rlen = rxbuf.size(), offset = 0;
-      do {
-        rlen = FormatHexDump(&buf, rxbuf.data() + offset, rlen, 16);
-        offset += 16;
-        ESP_LOGW(TAG, "OBD2: unhandled reply [%02x %02x]: %s", job.type, job.pid, buf ? buf : "-");
-      } while (rlen);
-      if (buf)
-        free(buf);
-      break;
+      switch (job.pid) {
+        case 0x0201: // rqBattTemperatures
+          PollReply_BMS_BattTemp(rxbuf.data(), rxbuf.size());
+          break;
+        case 0x0202: // rqBattModuleTemperatures
+          PollReply_BMS_ModuleTemp(rxbuf.data(), rxbuf.size());
+          break;
+        case 0x0203: //rqBattAmps
+          PollReply_BMS_BattAmps(rxbuf.data(), rxbuf.size());
+          break;
+        case 0x0204: //rqBattHVstatus
+          PollReply_BMS_BattHVstatus(rxbuf.data(), rxbuf.size());
+          break;
+        case 0x0207: //rqBattADCref
+          PollReply_BMS_BattADCref(rxbuf.data(), rxbuf.size());
+          break;
+        case 0x0208: // rqBattVolts
+          PollReply_BMS_BattVolts(rxbuf.data(), rxbuf.size());
+          break;
+        case 0x0209: // rqBattIsolation
+          PollReply_BMS_BattIsolation(rxbuf.data(), rxbuf.size());
+          break;
+        case 0x0310: // rqBattCapacity
+          PollReply_BMS_BattCapacity(rxbuf.data(), rxbuf.size());
+          break;
+        case 0x030D: // rqBattInternalResistanceCorrectionFactor
+          PollReply_BMS_BattInternalResistanceCorrectionFactor(rxbuf.data(), rxbuf.size());
+          break;
+        case 0x030B: // rqBattHVContactorCyclesLeft
+          PollReply_BMS_BattHVContactorCyclesLeft(rxbuf.data(), rxbuf.size());
+          break;
+        case 0x030C: // rqBattHVContactorMax
+          PollReply_BMS_BattHVContactorMax(rxbuf.data(), rxbuf.size());
+          break;
+        case 0xD000: // rqBattHVContactorState
+          PollReply_BMS_BattHVContactorState(rxbuf.data(), rxbuf.size());
+          break;
+        case 0x0304: // rqBattDate
+          PollReply_BMS_BattDate(rxbuf.data(), rxbuf.size());
+          break;
+        case 0xF18C: // rqBattProdDate
+          PollReply_BMS_BattProdDate(rxbuf.data(), rxbuf.size());
+          break;
+        case 0xF150: //rqBattHWrev
+          PollReply_BMS_BattHWrev(rxbuf.data(), rxbuf.size());
+          break;
+        case 0xF151: //rqBattSWrev
+          PollReply_BMS_BattSWrev(rxbuf.data(), rxbuf.size());
+          break;
+        case 0xF190: // rqBattVIN
+          PollReply_BMS_BattVIN(rxbuf.data(), rxbuf.size());
+          break;
+        case 0xF111: // rqChargerPN_HW
+          PollReply_NLG6_ChargerPN_HW(rxbuf.data(), rxbuf.size());
+          break;
+        case 0x0226: // rqChargerVoltages
+          PollReply_NLG6_ChargerVoltages(rxbuf.data(), rxbuf.size());
+          break;
+        case 0x0225: // rqChargerAmps
+          PollReply_NLG6_ChargerAmps(rxbuf.data(), rxbuf.size());
+          break;
+        case 0x022A: // rqChargerSelCurrent
+          PollReply_NLG6_ChargerSelCurrent(rxbuf.data(), rxbuf.size());
+          break;
+        case 0x0223: // rqChargerTemperatures
+          PollReply_NLG6_ChargerTemperatures(rxbuf.data(), rxbuf.size());
+          break;
+        case 0x1001:
+          PollReply_CEPC_VC(rxbuf.data(), rxbuf.size());
+          break;
+        case 0x2047: // rqCoolingTemp
+          PollReply_CEPC_CoolingTemp(rxbuf.data(), rxbuf.size());
+          break;
+        case 0x230A: // rqCoolingPumpTemp
+          PollReply_CEPC_CoolingPumpTemp(rxbuf.data(), rxbuf.size());
+          break;
+        case 0x2308: // rqCoolingPumpLV
+          PollReply_CEPC_CoolingPumpLV(rxbuf.data(), rxbuf.size());
+          break;
+        case 0x2309: // rqCoolingPumpAmps
+          PollReply_CEPC_CoolingPumpAmps(rxbuf.data(), rxbuf.size());
+          break;
+        case 0xD032: // rqCoolingPumpRPM
+          PollReply_CEPC_CoolingPumpRPM(rxbuf.data(), rxbuf.size());
+          break;
+        case 0x6309: // rqCoolingPumpOTR
+          PollReply_CEPC_CoolingPumpOTR(rxbuf.data(), rxbuf.size());
+          break;
+        case 0xD041: // rqCoolingFanRPM
+          PollReply_CEPC_CoolingFanRPM(rxbuf.data(), rxbuf.size());
+          break;
+        case 0x630A: // rqCoolingFanOTR
+          PollReply_CEPC_CoolingFanOTR(rxbuf.data(), rxbuf.size());
+          break;
+        case 0x6321: // rqBatteryHeaterOTR
+          PollReply_CEPC_BatteryHeaterOTR(rxbuf.data(), rxbuf.size());
+          break;
+        case 0xD302: // rqBatteryHeaterON
+          PollReply_CEPC_BatteryHeaterON(rxbuf.data(), rxbuf.size());
+          break;
+        case 0x6303: // rqVacuumPumpOTR
+          PollReply_CEPC_VacuumPumpOTR(rxbuf.data(), rxbuf.size());
+          break;
+        case 0x2041: // rqVacuumPumpPress1
+          PollReply_CEPC_VacuumPumpPress1(rxbuf.data(), rxbuf.size());
+          break;
+        case 0x2043: // rqVacuumPumpPress2
+          PollReply_CEPC_VacuumPumpPress2(rxbuf.data(), rxbuf.size());
+          break;
+        case 0x6308: // DT_Batterie_Alterszustand
+          PollReply_CEPC_BatteryAgeCondition(rxbuf.data(), rxbuf.size());
+          break;
+        // Unknown: output
+        default: {
+          char *buf = NULL;
+          size_t rlen = rxbuf.size(), offset = 0;
+          do {
+            rlen = FormatHexDump(&buf, rxbuf.data() + offset, rlen, 16);
+            offset += 16;
+            ESP_LOGW(TAG, "OBD2: unhandled reply [%02x %02x]: %s", job.type, job.pid, buf ? buf : "-");
+          } while (rlen);
+          if (buf)
+            free(buf);
+          break;
+        }
+      }
     }
   }
   
@@ -662,6 +756,13 @@ void OvmsVehicleSmartED::PollReply_BMS_BattCapacity(const char* reply_data, uint
   StandardMetrics.ms_v_bat_cac->SetValue(mt_v_bat_Cap_As_avg->AsFloat()/360.0, AmpHours);
 }
 
+void OvmsVehicleSmartED::PollReply_BMS_BattInternalResistanceCorrectionFactor(const char* reply_data, uint16_t reply_len) {
+  for(uint16_t n = 0; n < (94 * 2); n = n + 2) {
+    float cell = (reply_data[n] * 256 + reply_data[n + 1]);
+    mt_myBMS_InternalResistance->SetElemValue(n/2, cell*0.0001220699996f);
+  }
+}
+
 void OvmsVehicleSmartED::PollReply_NLG6_ChargerPN_HW(const char* reply_data, uint16_t reply_len) {
   int n;
   int comp = 0;
@@ -866,6 +967,63 @@ void OvmsVehicleSmartED::PollReply_CEPC_BatteryAgeCondition(const char* reply_da
   mt_CEPC_BatteryAgeCondition->SetValue(reply_data[0] * 0.5);
 }
 
+void OvmsVehicleSmartED::PollReply_ACPoll(uint16_t pid, const char* reply_data, uint16_t reply_len) {
+  switch (pid) {
+    case 0x00:
+      mt_dt_lid_00->SetValue(reply_data[0] * 0.1);
+      break;
+    case 0x10:
+      mt_dt_lid_10->SetValue(reply_data[0] * 0.5);
+      break;
+    case 0x11:
+      mt_dt_lid_11->SetValue(reply_data[0] * 0.5);
+      break;
+    case 0x12:
+      mt_dt_lid_12->SetValue(reply_data[0] * 0.1);
+      break;
+    case 0x30:
+      mt_dt_lid_30->SetValue(reply_data[0] * 0.1);
+      break;
+    case 0x56:
+      mt_dt_lid_56->SetValue(((reply_data[1] << 8) | reply_data[0]) * 0.1000000015);
+      break;
+    case 0x63:
+      mt_dt_lid_63->SetValue(reply_data[0] * 0.5);
+      break;
+    case 0x65:
+      mt_dt_lid_65->SetValue(((reply_data[1] << 8) | reply_data[0]) * 0.1000000015);
+      break;
+    case 0x6B:
+      mt_dt_lid_6b->SetValue(reply_data[0] * 50);
+      break;
+    case 0x6D:
+      if (reply_data[0] == 0x00) mt_dt_lid_6d->SetValue("No shutdown");
+      else if (reply_data[0] == 0x01) mt_dt_lid_6d->SetValue("Switch off element 1");
+      else if (reply_data[0] == 0x02) mt_dt_lid_6d->SetValue("Switch off element 2");
+      else if (reply_data[0] == 0x03) mt_dt_lid_6d->SetValue("Switch off element 3");
+      else if (reply_data[0] == 0x04) mt_dt_lid_6d->SetValue("Switch off element 4");
+      else if (reply_data[0] == 0x05) mt_dt_lid_6d->SetValue("Turn off all elements");
+      else if (reply_data[0] == 0x06) mt_dt_lid_6d->SetValue("Not defined");
+      else if (reply_data[0] == 0x07) mt_dt_lid_6d->SetValue("No signal");
+      break;
+    case 0x6E:
+      if (reply_data[0] & 0x01) mt_dt_lid_6e_1->SetValue("Setpoint adopted"); else mt_dt_lid_6e_1->SetValue("Setpoint not equal to actual value");
+      if (reply_data[0] & 0x02) mt_dt_lid_6e_2->SetValue("Setpoint adopted"); else mt_dt_lid_6e_2->SetValue("Setpoint not equal to actual value");
+      if (reply_data[0] & 0x04) mt_dt_lid_6e_3->SetValue("Setpoint adopted"); else mt_dt_lid_6e_3->SetValue("Setpoint not equal to actual value");
+      if (reply_data[0] & 0x08) mt_dt_lid_6e_4->SetValue("Setpoint adopted"); else mt_dt_lid_6e_4->SetValue("Setpoint not equal to actual value");
+      break;
+    case 0x6F: // 0=off, 1=on, 2=reduced, 4-255= invalid signal
+      if (reply_data[0] == 0x00) mt_dt_lid_6f->SetValue("off");
+      else if (reply_data[0] == 0x01) mt_dt_lid_6f->SetValue("on");
+      else if (reply_data[0] == 0x02) mt_dt_lid_6f->SetValue("reduced");
+      else mt_dt_lid_6f->SetValue("invalid signal");
+      break;
+    case 0x70:
+      mt_dt_lid_70->SetValue(((reply_data[1] << 8) | reply_data[0]) * 0.01);
+      break;
+  }
+}
+
 // BMS helpers
 void OvmsVehicleSmartED::BmsSetCellArrangementCapacity(int readings, int readingspermodule) {
   if (m_bms_capacitys != NULL) delete m_bms_capacitys;
@@ -996,7 +1154,7 @@ void OvmsVehicleSmartED::BmsDiag(int verbosity, OvmsWriter* writer) {
   
   writer->puts("-------------------------------------------");
   writer->puts("---- ED Battery Management Diagnostics ----");
-  writer->puts("----         OVMS Version 1.2          ----");
+  writer->puts("----         OVMS Version 1.3          ----");
   writer->puts("-------------------------------------------");
   
   writer->printf("Battery VIN : %s\n", (char*) mt_myBMS_BattVIN->AsString().c_str());
@@ -1090,9 +1248,13 @@ void OvmsVehicleSmartED::BmsDiag(int verbosity, OvmsWriter* writer) {
   
   writer->puts("-------------------------------------------");
   
-  writer->puts(" # ;mV   ;As/10");
+  writer->printf("Internal Resistance Correction Factor: %.4f\n", mt_myBMS_InternalResistance->GetElemValue(0));
+  
+  writer->puts("-------------------------------------------");
+  
+  writer->puts(" # ;mV   ;As/10  ;IRCF");
   for(int16_t n = 0; n < CELLCOUNT; n++){
-    writer->printf("%3d; %4.0f; %5.0f\n", n+1, m_bms_voltages[n]*1000, m_bms_capacitys[n]);
+    writer->printf("%3d; %4.0f; %5.0f; %.4f\n", n+1, m_bms_voltages[n]*1000, m_bms_capacitys[n], mt_myBMS_InternalResistance->GetElemValue(n+1));
   }
   writer->puts("-------------------------------------------");
   writer->puts("Individual Cell Statistics:");
@@ -1141,7 +1303,7 @@ void OvmsVehicleSmartED::printRPTdata(int verbosity, OvmsWriter* writer) {
   
   writer->puts("-----------------------------------------");
   writer->puts("---       Battery Status Report       ---");
-  writer->puts("---         OVMS Version 1.0          ---");
+  writer->puts("---         OVMS Version 1.3          ---");
   writer->puts("-----------------------------------------");
   
   writer->printf("Battery VIN: %s\n", (char*) mt_myBMS_BattVIN->AsString().c_str());

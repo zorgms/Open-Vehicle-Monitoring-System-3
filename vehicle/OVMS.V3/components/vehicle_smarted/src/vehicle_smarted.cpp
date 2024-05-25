@@ -103,6 +103,10 @@ OvmsVehicleSmartED::OvmsVehicleSmartED() : smarted_obd_rxwait(1,1) {
   m_last_pid = 0;
   m_reboot_ticker = 0;
 
+  m_cfg_cell_interval_drv = 0;
+  m_cfg_cell_interval_chg = 0;
+  m_cfg_cell_interval_awk = 0;
+
   // init commands:
   cmd_xse = MyCommandApp.RegisterCommand("xse","SmartED 451 Gen.3");
   cmd_xse->RegisterCommand("recu","Set recu..", xse_recu, "<up/down>",1,1);
@@ -111,6 +115,7 @@ OvmsVehicleSmartED::OvmsVehicleSmartED() : smarted_obd_rxwait(1,1) {
   cmd_xse->RegisterCommand("trip", "Show vehicle trip", xse_trip);
   cmd_xse->RegisterCommand("bmsdiag", "Show BMS diagnostic", xse_bmsdiag);
   cmd_xse->RegisterCommand("rptdata", "Show BMS RPTdata", xse_RPTdata);
+  cmd_xse->RegisterCommand("acpoll", "AirCon Parameter Poll", xse_ACPoll);
 
   MyConfig.RegisterParam("xse", "Smart ED", true, true);
 
@@ -119,6 +124,7 @@ OvmsVehicleSmartED::OvmsVehicleSmartED() : smarted_obd_rxwait(1,1) {
 
   // init OBD2 poller:
   ObdInitPoll();
+  DTCPollInit();
 
   ConfigChanged(NULL);
 
@@ -672,13 +678,16 @@ void OvmsVehicleSmartED::IncomingFrameCan1(CAN_frame_t* p_frame) {
     // Polling IDs
     case 0x7a3:
     {
-      // 7a3 8 04 61 12 64 00 00 00 00 || 7A3 04 61 12 c2 ff 00 00 00
+      // 7a3 8 04 61 12 64 00 00 00 00 || 7A3 04 61 12 c2 ff 00 00 00 // 04 70 31 01 C8 
       if (d[0] == 0x04 && d[1] == 0x61 && d[2] == 0x12) {
         if (d[4] == 0xff) {
           int temp = CAN_UINT(3)-0xffff;
           StandardMetrics.ms_v_env_cabintemp->SetValue((float) temp / 10.0);
         } else
           StandardMetrics.ms_v_env_cabintemp->SetValue((float) CAN_UINT(3) / 10.0);
+      }
+      if (d[0] == 0x04 && d[1] == 0x70 && d[2] == 0x31 && d[3] == 0x01) {
+        mt_dt_ioc_hv->SetValue(d[4] * 0.5);
       }
       // ESP_LOGD(TAG, "%03x 8 %02x %02x %02x %02x %02x %02x %02x %02x", p_frame->MsgID, d[0], d[1], d[2], d[3], d[4], d[5], d[6], d[7]);
       break;

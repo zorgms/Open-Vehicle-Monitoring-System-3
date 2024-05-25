@@ -84,6 +84,7 @@ class OvmsVehicleSmartED : public OvmsVehicle
     static void WebCfgBmsCellMonitor(PageEntry_t& p, PageContext_t& c);
     static void WebCfgBmsCellCapacity(PageEntry_t& p, PageContext_t& c);
     static void WebCfgEco(PageEntry_t& p, PageContext_t& c);
+    static void WebCfgACPoll(PageEntry_t& p, PageContext_t& c);
 #endif
     void ConfigChanged(OvmsConfigParam* param) override;
     bool SetFeature(int key, const char* value);
@@ -113,6 +114,7 @@ class OvmsVehicleSmartED : public OvmsVehicle
     static void xse_trip(int verbosity, OvmsWriter* writer, OvmsCommand* cmd, int argc, const char* const* argv);
     static void xse_bmsdiag(int verbosity, OvmsWriter* writer, OvmsCommand* cmd, int argc, const char* const* argv);
     static void xse_RPTdata(int verbosity, OvmsWriter* writer, OvmsCommand* cmd, int argc, const char* const* argv);
+    static void xse_ACPoll(int verbosity, OvmsWriter* writer, OvmsCommand* cmd, int argc, const char* const* argv);
 
   protected:
     int m_reboot_ticker;
@@ -144,6 +146,7 @@ class OvmsVehicleSmartED : public OvmsVehicle
     void PollReply_BMS_BattADCref(const char* reply_data, uint16_t reply_len);
     void PollReply_BMS_BattVolts(const char* reply_data, uint16_t reply_len);
     void PollReply_BMS_BattCapacity(const char* reply_data, uint16_t reply_len);
+    void PollReply_BMS_BattInternalResistanceCorrectionFactor(const char* reply_data, uint16_t reply_len);
     void PollReply_BMS_BattTemp(const char* reply_data, uint16_t reply_len);
     void PollReply_BMS_ModuleTemp(const char* reply_data, uint16_t reply_len);
     void PollReply_BMS_BattDate(const char* reply_data, uint16_t reply_len);
@@ -172,6 +175,7 @@ class OvmsVehicleSmartED : public OvmsVehicle
     void PollReply_CEPC_VacuumPumpPress1(const char* reply_data, uint16_t reply_len);
     void PollReply_CEPC_VacuumPumpPress2(const char* reply_data, uint16_t reply_len);
     void PollReply_CEPC_BatteryAgeCondition(const char* reply_data, uint16_t reply_len);
+    void PollReply_ACPoll(uint16_t pid, const char* reply_data, uint16_t reply_len);
 
     OvmsCommand *cmd_xse;
     
@@ -375,6 +379,39 @@ class OvmsVehicleSmartED : public OvmsVehicle
     int                 m_cfg_cell_interval_drv;    // Cell poll interval while driving, default 15 sec.
     int                 m_cfg_cell_interval_chg;    // … while charging, default 60 sec.
     int                 m_cfg_cell_interval_awk;    // … while awake, default 60 sec.
+  
+  protected:
+    void PollACstatus(int verbosity, OvmsWriter* writer);
+    void PollRunFinished() override;
+    
+    bool poll_AC;
+    
+    OvmsMetricFloat* mt_dt_ioc_hv;  //DT_IOC_HV_PTC_Ansteuern
+    OvmsMetricFloat* mt_dt_lid_10;  //DT_LID_10_CAN_Aussentemperatur_CAN_Aussentemperatur
+    OvmsMetricFloat* mt_dt_lid_11;  //DT_LID_11_System_Aussentemperatur_System_Aussentemperatur
+    OvmsMetricFloat* mt_dt_lid_12;  //DT_LID_12_Innentemperatur_Innentemperatur
+    OvmsMetricFloat* mt_dt_lid_00;  //DT_LID_00_Bordspannung_Bordspannung
+    OvmsMetricFloat* mt_dt_lid_30;  //DT_LID_30_Eingestellter_Wert_Drehschalter_Temperatur_Eingest
+    OvmsMetricFloat* mt_dt_lid_56;  //DT_LID_56_Ptc_Temperatur_Ptc_Temperatur
+    OvmsMetricFloat* mt_dt_lid_63;  //DT_LID_63_Sollwert_HV_PTC_Sollwert_HV_PTC
+    OvmsMetricFloat* mt_dt_lid_65;  //DT_LID_65_Istwert_HV_Versorgung_PTC_Istwert_HV_Versorgung
+    OvmsMetricFloat* mt_dt_lid_6b;  //DT_LID_6B_Vorhandene_Leistung_fuer_Kabinen_Vorbedingung_
+    OvmsMetricFloat* mt_dt_lid_70;  //DT_LID_70_HV_Strom_HV_PTC_Strom
+    OvmsMetricString* mt_dt_lid_6d;   //DT_LID_6D_Status_Sicherheitsabschaltung_HV_PTC_Status
+    OvmsMetricString* mt_dt_lid_6e_1; //DT_LID_6E_Status_Sollwert_Uebernahme_HV_PTC_Strang_1
+    OvmsMetricString* mt_dt_lid_6e_2; //DT_LID_6E_Status_Sollwert_Uebernahme_HV_PTC_Strang_1
+    OvmsMetricString* mt_dt_lid_6e_3; //DT_LID_6E_Status_Sollwert_Uebernahme_HV_PTC_Strang_1
+    OvmsMetricString* mt_dt_lid_6e_4; //DT_LID_6E_Status_Sollwert_Uebernahme_HV_PTC_Strang_1
+    OvmsMetricString* mt_dt_lid_6f;   //DT_LID_6F_Betriebsstatus_HV_PTC_Status
+
+  // ed_dtc_poll.cpp
+  protected:
+    void DTCPollInit();
+
+  public:
+    static void shell_obd_showdtc(int verbosity, OvmsWriter* writer, OvmsCommand* cmd, int argc, const char* const* argv);
+    static void shell_obd_cleardtc(int verbosity, OvmsWriter* writer, OvmsCommand* cmd, int argc, const char* const* argv);
+    void DTCdecode(OvmsWriter* writer, std::string response, int typ);
 };
 
 #endif //#ifndef __VEHICLE_SMARTED_H__

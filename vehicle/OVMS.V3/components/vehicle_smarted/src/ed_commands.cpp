@@ -175,6 +175,17 @@ void OvmsVehicleSmartED::xse_RPTdata(int verbosity, OvmsWriter* writer, OvmsComm
   smart->printRPTdata(verbosity, writer);
 }
 
+/**
+ * ACPoll
+ */
+void OvmsVehicleSmartED::xse_ACPoll(int verbosity, OvmsWriter* writer, OvmsCommand* cmd, int argc, const char* const* argv) {
+  OvmsVehicleSmartED* smart = GetInstance(writer);
+  if (!smart)
+    return;
+	
+  smart->PollACstatus(verbosity, writer);
+}
+
 void OvmsVehicleSmartED::shell_obd_request(int verbosity, OvmsWriter* writer, OvmsCommand* cmd, int argc, const char* const* argv)
 {
   OvmsVehicleSmartED* smart = GetInstance(writer);
