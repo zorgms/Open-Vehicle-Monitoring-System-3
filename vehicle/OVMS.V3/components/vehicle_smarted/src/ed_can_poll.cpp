@@ -352,7 +352,7 @@ void OvmsVehicleSmartED::PollACstatus(int verbosity, OvmsWriter* writer) {
   } else writer->puts("error");
 }
 
-void OvmsVehicleSmartED::PollRunFinished(){
+void OvmsVehicleSmartED::PollRunFinished(canbus *bus){
   if(poll_AC) {
     ObdModifyPoll();
     poll_AC = false;
