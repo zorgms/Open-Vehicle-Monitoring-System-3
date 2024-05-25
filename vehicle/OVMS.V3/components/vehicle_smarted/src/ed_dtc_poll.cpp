@@ -127,11 +127,11 @@ void OvmsVehicleSmartED::shell_obd_showdtc(int verbosity, OvmsWriter* writer, Ov
         errname ? " " : "", errname ? errname : "");
       return;
     }
-    if (!response.data()[1]) {
+    if (!response[1]) {
       writer->printf("%s: 0 present\n", DTC_data[i].name.c_str());
     } else {
       if (DTC_data[i].session == 1) {
-        writer->printf("%s: %d present\n", DTC_data[i].name.c_str(), response.data()[0]);
+        writer->printf("%s: %d present\n", DTC_data[i].name.c_str(), response[0]);
       } else {
         int cnt = (response.size() - 1) / 4;
         writer->printf("%s: %d present\n", DTC_data[i].name.c_str(), cnt);
@@ -231,7 +231,7 @@ void OvmsVehicleSmartED::DTCdecode(OvmsWriter* writer, std::string response, int
   }
   int cnt = (response.size() - 1) / x;
   for (int i = 0; i < cnt; i++) {
-    switch ((response.data()[i*x+1] & 0b11000000) >> 6) {
+    switch ((response[i*x+1] & 0b11000000) >> 6) {
       case 0b00:
         writer->printf("P"); // 00 = P = Powertrain
         break;
@@ -245,7 +245,7 @@ void OvmsVehicleSmartED::DTCdecode(OvmsWriter* writer, std::string response, int
         writer->printf("U"); // 11 = U = serial data
         break;
     }
-    switch ((response.data()[i*x+1] & 0b00110000) >> 4) {
+    switch ((response[i*x+1] & 0b00110000) >> 4) {
       case 0b0000:
         writer->printf("0");
         break;
@@ -260,23 +260,23 @@ void OvmsVehicleSmartED::DTCdecode(OvmsWriter* writer, std::string response, int
         break;
     }
     if (x==3) {
-      writer->printf("%01x%02x", response.data()[i*x+1] & 0x0f, response.data()[i*x+2]);
+      writer->printf("%01x%02x", response[i*x+1] & 0x0f, response[i*x+2]);
       
-      if ((response.data()[i*x+3] & 0x20) > 0) {
+      if ((response[i*x+3] & 0x20) > 0) {
         writer->printf(" saved");
       }
-      if ((response.data()[i*x+3] & 0x40) > 0) {
+      if ((response[i*x+3] & 0x40) > 0) {
         writer->printf(" and present");
       }
       writer->puts("");
     }
     if (x==4) {
-      writer->printf("%01x%02x%02x", response.data()[i*x+1] & 0x0f, response.data()[i*x+2], response.data()[i*x+3]);
+      writer->printf("%01x%02x%02x", response[i*x+1] & 0x0f, response[i*x+2], response[i*x+3]);
       
-      if ((response.data()[i*x+4] & 0x20) > 0) {
+      if ((response[i*x+4] & 0x20) > 0) {
         writer->printf(" saved");
       }
-      if ((response.data()[i*x+4] & 0x40) > 0) {
+      if ((response[i*x+4] & 0x40) > 0) {
         writer->printf(" and present");
       }
       writer->puts("");

@@ -146,6 +146,7 @@ class OvmsVehicleSmartED : public OvmsVehicle
     void PollReply_BMS_BattADCref(const char* reply_data, uint16_t reply_len);
     void PollReply_BMS_BattVolts(const char* reply_data, uint16_t reply_len);
     void PollReply_BMS_BattCapacity(const char* reply_data, uint16_t reply_len);
+    void PollReply_BMS_BattInternalResistanceCorrectionFactor(const char* reply_data, uint16_t reply_len);
     void PollReply_BMS_BattTemp(const char* reply_data, uint16_t reply_len);
     void PollReply_BMS_ModuleTemp(const char* reply_data, uint16_t reply_len);
     void PollReply_BMS_BattDate(const char* reply_data, uint16_t reply_len);
