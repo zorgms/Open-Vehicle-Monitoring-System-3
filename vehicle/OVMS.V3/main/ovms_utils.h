@@ -38,6 +38,8 @@
 #include <string>
 #include <iomanip>
 #include <vector>
+#include <forward_list>
+#include <functional>
 #include "ovms.h"
 
 // Macro utils:
@@ -634,4 +636,199 @@ static inline std::string str_tolower(std::string s) {
                   );
     return s;
 }
+
+/**
+ * Call-back register for registering named call-back procedures.
+ *
+ * The list does not shrink which is fine for our use-cases.
+ * Can be made inexpensively threadsafe/re-entrant safe.
+ */
+template <typename FN>
+class ovms_callback_register_t
+  {
+  private:
+  class entry_t
+    {
+    public:
+      entry_t(const std::string &caller, FN callback)
+        {
+        m_name = caller;
+        m_callback = callback;
+        }
+      ~entry_t() {}
+    public:
+      std::string m_name;
+      FN m_callback;
+    };
+    typedef std::forward_list<entry_t> callbacklist_t;
+    callbacklist_t m_list;
+  public:
+    ~ovms_callback_register_t()
+      {
+      }
+    void Register(const std::string &nametag, FN callback)
+      {
+      // Replace
+      for (auto it = m_list.begin(); it != m_list.end(); ++it)
+        {
+        if ((*it).m_name == nametag)
+          {
+          (*it).m_callback = callback;
+          return;
+          }
+        }
+      if (!callback)
+        return;
+      for (auto it = m_list.begin(); it != m_list.end(); ++it)
+        {
+        if (!(*it).m_callback)
+          {
+          entry_t &entry = *it;
+          entry.m_name = nametag;
+          entry.m_callback = callback;
+          return;
+          }
+        }
+      m_list.push_front(entry_t(nametag, callback));
+      }
+    void Deregister(const std::string &nametag)
+      {
+      Register(nametag, nullptr);
+      }
+    typedef std::function<void (const std::string &nametag, FN callback)> visit_fn_t;
+    void Call(visit_fn_t visit)
+      {
+      for (auto it = m_list.begin(); it != m_list.end(); ++it)
+        {
+        const entry_t &entry = *it;
+        if (entry.m_callback)
+          visit(entry.m_name, entry.m_callback);
+        }
+      }
+  };
+
+
+  /** Get the variable and null it in an atomic way.
+   * Should probably be used sparingly.
+   */
+  template<typename T>
+  T Atomic_Swap( volatile T &variable, T newVal)
+    {
+    return __atomic_exchange_n(&variable, newVal, __ATOMIC_SEQ_CST);
+    }
+  /** Get the variable and null it in an atomic way.
+   * Should probably be used sparingly.
+   * @return true if successful.
+   */
+  template<typename T>
+  T Atomic_GetAndNull( volatile T &variable)
+    {
+    return Atomic_Swap<T>(variable, nullptr);
+    }
+
+  template<typename T>
+  T Atomic_Get( volatile const T &variable)
+    {
+    return variable;
+    }
+  template<typename T>
+  T Atomic_Increment( volatile T &variable, T amt)
+    {
+    return __atomic_fetch_add(&variable, amt, __ATOMIC_SEQ_CST);
+    }
+
+  template<typename T>
+  T Atomic_Subtract( volatile T &variable, T amt)
+    {
+    return __atomic_fetch_sub(&variable, amt, __ATOMIC_SEQ_CST);
+    }
+
+  /**
+   * Calls a function if the lifetime of the object is less
+   * than the specified constructed value.
+   * Doesn't call the function if the tick count wraps.
+   */
+  class timer_util_t
+    {
+    public:
+      typedef std::function<void(uint64_t start, uint64_t finish)> finish_proc_t;
+    private:
+      uint64_t m_start;
+      finish_proc_t m_cb;
+      inline static uint64_t getTime() {
+        return esp_timer_get_time();
+      }
+    public:
+      timer_util_t(const finish_proc_t &timeup_cb )
+        : m_start(getTime()),
+          m_cb(timeup_cb)
+        {
+        }
+      ~timer_util_t();
+    };
+  constexpr unsigned floorlog2(unsigned x)
+    {
+    return x == 1 ? 0 : 1+floorlog2(x >> 1);
+    }
+  /* Maintain a smoothed average using shifts for division.
+   * T should be an integer type
+   * N needs to be a power of 2
+   */
+  template <typename T, unsigned N>
+  class average_util_t
+    {
+    private:
+      T m_ave;
+    public:
+      average_util_t() : m_ave(0) {}
+
+      static const uint8_t _BITS = floorlog2(N);
+
+      void add( T val)
+        {
+        static_assert(N == (1 << _BITS), "N must be a power of 2");
+        m_ave = (((N-1) * m_ave) + val) >> _BITS;
+        }
+      T get() { return m_ave; }
+      operator T() { return m_ave; }
+      void reset()
+        {
+        m_ave = 0;
+        }
+    };
+  /* Assists in maintaining smoothed average for a period.
+   * T should be an integer type
+   * N needs to be a power of 2
+   */
+  template <typename T, unsigned N>
+  class average_accum_util_t
+    {
+    private:
+      T m_sum;
+      average_util_t<T,N> ave;
+    public:
+      average_accum_util_t()
+        : m_sum(0)
+        {}
+
+      // Add to the current sum.
+      void add(T val)
+        {
+        m_sum += val;
+        }
+      // Pushes the current sum into the averager.
+      void push()
+        {
+        ave.add(m_sum);
+        m_sum = 0;
+        }
+      T get() { return ave.get(); }
+      T sum() { return m_sum; }
+      void reset()
+        {
+        m_sum = 0;
+        ave.reset();
+        }
+    };
+
 #endif // __OVMS_UTILS_H__

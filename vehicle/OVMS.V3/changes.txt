@@ -1,6 +1,13 @@
 Open Vehicle Monitor System v3 - Change log
 
 ????-??-?? ???  ???????  OTA release
+- Separate Polling from the Vehicle implementation
+  New commands:
+    poller status
+    poller pause
+    poller resume
+    poller trace on|txrx|all|off|status-- Control verbose logging
+    poller times on|off|status|reset   -- Control poller timing metrics
 - Duktape support for Metric Age / Stale
   New Duktape methods
     OvmsMetrics.IsStale
