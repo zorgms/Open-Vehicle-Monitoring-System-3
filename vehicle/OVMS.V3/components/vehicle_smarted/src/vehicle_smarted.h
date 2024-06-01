@@ -387,6 +387,7 @@ class OvmsVehicleSmartED : public OvmsVehicle
     void PollRunFinished(canbus *bus) override;
     
     bool poll_AC;
+    int poll_AC_count;
     
     OvmsMetricFloat* mt_dt_ioc_hv;  //DT_IOC_HV_PTC_Ansteuern
     OvmsMetricFloat* mt_dt_lid_10;  //DT_LID_10_CAN_Aussentemperatur_CAN_Aussentemperatur
