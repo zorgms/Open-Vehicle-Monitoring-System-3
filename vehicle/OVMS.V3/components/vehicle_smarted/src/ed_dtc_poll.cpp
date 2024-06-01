@@ -122,7 +122,7 @@ void OvmsVehicleSmartED::shell_obd_showdtc(int verbosity, OvmsWriter* writer, Ov
       writer->puts("ERROR: timeout waiting for poller/response");
       return;
     } else if (err) {
-      const char* errname = smart->PollResultCodeName(err);
+      const char* errname = OvmsPoller::PollResultCodeName(err);
       writer->printf("ERROR: request failed with response error code %02X%s%s\n", err,
         errname ? " " : "", errname ? errname : "");
       return;
@@ -196,7 +196,7 @@ void OvmsVehicleSmartED::shell_obd_cleardtc(int verbosity, OvmsWriter* writer, O
       writer->puts("ERROR: timeout waiting for poller/response");
       return;
     } else if (err) {
-      const char* errname = smart->PollResultCodeName(err);
+      const char* errname = OvmsPoller::PollResultCodeName(err);
       writer->printf("ERROR: request failed with response error code %02X%s%s\n", err,
         errname ? " " : "", errname ? errname : "");
       return;

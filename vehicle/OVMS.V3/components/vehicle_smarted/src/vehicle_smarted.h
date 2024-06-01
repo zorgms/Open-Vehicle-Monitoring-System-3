@@ -269,6 +269,8 @@ class OvmsVehicleSmartED : public OvmsVehicle
     OvmsMetricVector<int> *mt_myBMS_HWrev;        //!< hardware-revision
     OvmsMetricVector<int> *mt_myBMS_SWrev;        //!< soft-revision
     
+    OvmsMetricVector<float> *mt_myBMS_InternalResistance;
+    
     OvmsMetricBool* mt_CEPC_Wippen;               //!< Recu Wippen installed
     
     OvmsMetricFloat* mt_CEPC_CoolingTemp;         //!< main cooling temperatur measurement / 8
@@ -382,9 +384,10 @@ class OvmsVehicleSmartED : public OvmsVehicle
   
   protected:
     void PollACstatus(int verbosity, OvmsWriter* writer);
-    void PollRunFinished() override;
+    void PollRunFinished(canbus *bus) override;
     
     bool poll_AC;
+    int poll_AC_count;
     
     OvmsMetricFloat* mt_dt_ioc_hv;  //DT_IOC_HV_PTC_Ansteuern
     OvmsMetricFloat* mt_dt_lid_10;  //DT_LID_10_CAN_Aussentemperatur_CAN_Aussentemperatur

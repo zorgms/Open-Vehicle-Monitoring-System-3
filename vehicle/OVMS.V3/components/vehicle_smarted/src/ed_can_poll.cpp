@@ -178,6 +178,7 @@ void OvmsVehicleSmartED::ObdInitPoll() {
   m_bms_limit_cmax = 22000;
   
   poll_AC = false;
+  poll_AC_count = 0;
 
   mt_v_bat_pack_cmin = new OvmsMetricFloat("xse.v.b.p.capacity.min", SM_STALE_HIGH, Other);
   mt_v_bat_pack_cmax = new OvmsMetricFloat("xse.v.b.p.capacity.max", SM_STALE_HIGH, Other);
@@ -327,6 +328,7 @@ void OvmsVehicleSmartED::PollACstatus(int verbosity, OvmsWriter* writer) {
 
   if (mt_bus_awake->AsBool()) {
     poll_AC = true;
+    poll_AC_count = 0;
 
     canbus *obd;
     obd = m_can1;
@@ -352,11 +354,13 @@ void OvmsVehicleSmartED::PollACstatus(int verbosity, OvmsWriter* writer) {
   } else writer->puts("error");
 }
 
-void OvmsVehicleSmartED::PollRunFinished(){
+void OvmsVehicleSmartED::PollRunFinished(canbus *bus){
   if(poll_AC) {
-    ObdModifyPoll();
-    poll_AC = false;
-    ESP_LOGI(TAG, "ACPoll stop");
+    if (++poll_AC_count == 5) {
+      ObdModifyPoll();
+      poll_AC = false;
+      ESP_LOGI(TAG, "ACPoll stop");
+    }
   }
 }
 
