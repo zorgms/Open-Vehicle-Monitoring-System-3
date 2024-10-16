@@ -137,6 +137,7 @@ class modem : public pcp, public InternalRamAllocated
     modem_state1_t         m_state1_timeout_goto;
     int                    m_state1_timeout_ticks;
     int                    m_state1_userdata;
+    int                    m_state1_netloss_ticker;
     int                    m_line_unfinished;
 
     std::string            m_line_buffer;

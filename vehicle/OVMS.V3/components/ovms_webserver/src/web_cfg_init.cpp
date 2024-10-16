@@ -749,7 +749,7 @@ std::string OvmsWebServer::CfgInit3(PageEntry_t& p, PageContext_t& c, std::strin
   if (server.empty())
     server = MyConfig.GetParamValue("ota", "server");
   if (server.empty())
-    server = "https://api.openvehicles.com/firmware/ota";
+    server = "https://ovms.dimitrie.eu/firmware/ota";
 
   MyOTA.GetStatus(info, true);
 
@@ -847,6 +847,8 @@ std::string OvmsWebServer::CfgInit3(PageEntry_t& p, PageContext_t& c, std::strin
     "https://api.openvehicles.com/firmware/ota" , server == "https://api.openvehicles.com/firmware/ota");
   c.input_radio_option("server", "Europe (dexters-web.de)",
     "https://ovms.dexters-web.de/firmware/ota", server == "https://ovms.dexters-web.de/firmware/ota");
+  c.input_radio_option("server", "Europe (dimitrie.eu)",
+    "https://ovms.dimitrie.eu/firmware/ota", server == "https://ovms.dimitrie.eu/firmware/ota");
   c.input_radio_end();
   c.print(
     "<div class=\"form-group\">"
@@ -970,7 +972,7 @@ std::string OvmsWebServer::CfgInit4(PageEntry_t& p, PageContext_t& c, std::strin
     // default data server = ota server:
     if (server.empty()) {
       server = MyConfig.GetParamValue("ota", "server");
-      if (startsWith(server, "ovms.dexters-web.de"))
+      if (startsWith(server, "ovms.dimitrie.eu"))
         server = "ovms.dexters-web.de";
       else
         server = "api.openvehicles.com";
@@ -1162,7 +1164,7 @@ std::string OvmsWebServer::CfgInit5(PageEntry_t& p, PageContext_t& c, std::strin
 
     // default: hologram
     if (apn.empty())
-      apn = "hologram";
+      apn = "simbase";
   }
 
   // output:

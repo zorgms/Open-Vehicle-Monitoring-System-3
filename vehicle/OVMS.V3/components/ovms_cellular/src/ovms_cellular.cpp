@@ -287,6 +287,7 @@ modem::modem(const char* name, uart_port_t uartnum, int baud, int rxpin, int txp
   m_state1_timeout_goto = None;
   m_state1_timeout_ticks = -1;
   m_state1_userdata = 0;
+  m_state1_netloss_ticker = 2;
   m_line_unfinished = -1;
   m_line_buffer.clear();
   m_netreg = Unknown;
@@ -370,7 +371,7 @@ bool modem::ModemIsNetMode()
 
 void modem::AutoInit()
   {
-  if (MyConfig.GetParamValueBool("auto", "modem", false))
+  if (MyConfig.GetParamValueBool("auto", "modem", true))
     SetPowerMode(On);
   }
 
@@ -887,7 +888,7 @@ modem::modem_state1_t modem::State1Ticker1()
       if (m_state1_ticker == 1)
         {
         // Check for exit out of this state...
-        std::string p = MyConfig.GetParamValue("modem", "apn");
+        std::string p = MyConfig.GetParamValue("modem", "apn", "simbase");
         if ((!MyConfig.GetParamValueBool("modem", "enable.net", true))||(p.empty()))
           return NetHold; // Just hold, without starting PPP
         }
@@ -908,7 +909,7 @@ modem::modem_state1_t modem::State1Ticker1()
         if (m_mux != NULL)
           {
           std::string apncmd("AT+CGDCONT=1,\"IP\",\"");
-          apncmd.append(MyConfig.GetParamValue("modem", "apn"));
+          apncmd.append(MyConfig.GetParamValue("modem", "apn", "simbase"));
           apncmd.append("\";+CGDATA=\"PPP\",1\r\n");
           ESP_LOGD(TAG,"Netstart %s",apncmd.c_str());
           muxtx(m_mux_channel_DATA,apncmd.c_str());
@@ -956,7 +957,16 @@ modem::modem_state1_t modem::State1Ticker1()
         {
         // We've lost the network connection
         ESP_LOGW(TAG, "Lost network connection (+PPP disconnect in NetMode)");
-        return NetLoss;
+        if (--m_state1_netloss_ticker == 0)
+          {
+          m_state1_netloss_ticker = 2;
+          ESP_LOGW(TAG, "Lost network connection (+PPP disconnect in NetMode), performing modem power cycle");
+          return PowerOffOn;
+          }
+          else
+          {
+          return NetLoss;
+          }
         }
       if ((m_mux != NULL)&&(m_state1_ticker>5)&&((m_state1_ticker % 30) == 0))
         { m_driver->StatusPoller(); }
