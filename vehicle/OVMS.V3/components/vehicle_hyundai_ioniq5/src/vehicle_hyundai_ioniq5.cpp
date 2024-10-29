@@ -64,6 +64,10 @@
 #include <sstream>
 
 const char *OvmsHyundaiIoniqEv::TAG = "v-ioniq5";
+const char *OvmsHyundaiIoniqEv::FULL_NAME = "Hyundai Ioniq 5 EV/KIA EV6";
+const char *OvmsHyundaiIoniqEv::SHORT_NAME = "Ioniq 5/EV 6";
+const char *OvmsHyundaiIoniqEv::VEHICLE_TYPE = "I5";
+
 
 #ifdef bind
 #undef bind
@@ -487,7 +491,9 @@ OvmsHyundaiIoniqEv::OvmsHyundaiIoniqEv()
 
   ESP_LOGI(TAG, "Hyundai Ioniq 5 / KIA EV6 " IONIQ5_VERSION " vehicle module");
 
+#ifdef XIQ_CAN_WRITE
   StopTesterPresentMessages();
+#endif
 
   memset( m_vin, 0, sizeof(m_vin));
 
@@ -624,7 +630,8 @@ OvmsHyundaiIoniqEv::OvmsHyundaiIoniqEv()
   MyMetrics.RegisterListener(TAG, MS_V_BAT_PACK_TAVG, std::bind(&OvmsHyundaiIoniqEv::UpdatedAverageTemp, this, _1));
 
   // init commands:
-  cmd_hiq = MyCommandApp.RegisterCommand("xhiq", "Hyundai Ioniq 5 EV/Kia EV6");
+  cmd_hiq = MyCommandApp.RegisterCommand("xhiq", "Hyundai Ioniq 5 EV/Kia EV6", nullptr, "", 0,0, true,
+      nullptr, OvmsCommandType::SystemAllowUsrDir);
   cmd_hiq->RegisterCommand("trip", "Show trip info since last parked", xiq_trip_since_parked);
   cmd_hiq->RegisterCommand("tripch", "Show trip info since last charge", xiq_trip_since_charge);
   cmd_hiq->RegisterCommand("tpms", "Tire pressure monitor", xiq_tpms);
@@ -692,6 +699,15 @@ OvmsHyundaiIoniqEv::OvmsHyundaiIoniqEv()
 }
 
 static const char *ECU_POLL = "!v.xiq.ecu";
+
+const char* OvmsHyundaiIoniqEv::VehicleShortName()
+  {
+  return SHORT_NAME;
+  }
+const char* OvmsHyundaiIoniqEv::VehicleType()
+  {
+  return VEHICLE_TYPE;
+  }
 
 void OvmsHyundaiIoniqEv::ECUStatusChange(bool run)
 {
@@ -1224,8 +1240,10 @@ void OvmsHyundaiIoniqEv::Ticker1(uint32_t ticker)
     ECUStatusChange(false);
   }
 
+#ifdef XIQ_CAN_WRITE
   // Send tester present
   SendTesterPresentMessages();
+#endif
 
   DoNotify();
   XDISARM;
@@ -1888,7 +1906,7 @@ public:
 
 OvmsHyundaiIoniqEvInit::OvmsHyundaiIoniqEvInit()
 {
-  ESP_LOGI(OvmsHyundaiIoniqEv::TAG, "Registering Vehicle: Hyundai Ioniq 5 EV (9000)");
+  ESP_LOGI(OvmsHyundaiIoniqEv::TAG, "Registering Vehicle: %s (9000)", OvmsHyundaiIoniqEv::FULL_NAME);
 
-  MyVehicleFactory.RegisterVehicle<OvmsHyundaiIoniqEv>("I5", "Hyundai Ioniq 5 EV/KIA EV6");
+  MyVehicleFactory.RegisterVehicle<OvmsHyundaiIoniqEv>(OvmsHyundaiIoniqEv::VEHICLE_TYPE, OvmsHyundaiIoniqEv::FULL_NAME);
 }

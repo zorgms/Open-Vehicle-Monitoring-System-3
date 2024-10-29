@@ -31,6 +31,7 @@
 #include "ovms_log.h"
 static const char *TAG = "vehicle";
 // static const char *TAGRX = "vehicle-rx";
+static const char *CHECK_SHUTDOWN_TAG = "vehicle-shutdown";
 
 #include <stdio.h>
 #include <algorithm>
@@ -64,6 +65,8 @@ OvmsVehicleFactory::OvmsVehicleFactory()
 
   m_currentvehicle = NULL;
   m_currentvehicletype.clear();
+
+  MyEvents.RegisterEvent(TAG,"system.shuttingdown",std::bind(&OvmsVehicleFactory::EventSystemShuttingDown, this, _1, _2));
 
   OvmsCommand* cmd_vehicle = MyCommandApp.RegisterCommand("vehicle","Vehicle framework", vehicle_status, "", 0, 0, false);
   cmd_vehicle->RegisterCommand("module","Set (or clear) vehicle module",vehicle_module,"<type>",0,1,true,vehicle_validate);
@@ -155,7 +158,51 @@ OvmsVehicleFactory::OvmsVehicleFactory()
 
 OvmsVehicleFactory::~OvmsVehicleFactory()
   {
-  DoClearVehicle(false, false);
+  MyEvents.DeregisterEvent(TAG);
+  MyEvents.DeregisterEvent(CHECK_SHUTDOWN_TAG);
+  // Should be shutdown properly
+  if (m_currentvehicle)
+    delete m_currentvehicle;
+  auto it = m_pending_shutdown.begin();
+  while (it != m_pending_shutdown.end())
+    {
+    auto vehicle = (*it);
+    it = m_pending_shutdown.erase(it);
+    delete vehicle;
+    }
+  }
+
+void OvmsVehicleFactory::EventSystemShuttingDown(std::string event, void* data)
+  {
+  MyBoot.ShutdownPending(TAG);
+  MyEvents.RegisterEvent(CHECK_SHUTDOWN_TAG,"ticker.1",std::bind(&OvmsVehicleFactory::EventTicker1ShuttingDown, this, _1, _2));
+  DoClearVehicle(false, false, false/*dont wait*/);
+  }
+
+void OvmsVehicleFactory::EventTicker1ShuttingDown(std::string event, void* data)
+  {
+  bool iscleared = true;
+  auto it = m_pending_shutdown.begin();
+  while (it != m_pending_shutdown.end())
+    {
+    if ((*it)->IsShutdown())
+      {
+      auto vehicle = (*it);
+      it = m_pending_shutdown.erase(it);
+      delete vehicle;
+      }
+    else
+      {
+      iscleared = false;
+      ++it;
+      }
+    }
+  if (iscleared)
+    {
+    MyEvents.DeregisterEvent(CHECK_SHUTDOWN_TAG);
+    if (MyBoot.IsShuttingDown())
+      MyBoot.ShutdownReady(TAG);
+    }
   }
 
 OvmsVehicle* OvmsVehicleFactory::NewVehicle(const char* VehicleType)
@@ -170,9 +217,10 @@ OvmsVehicle* OvmsVehicleFactory::NewVehicle(const char* VehicleType)
 
 void OvmsVehicleFactory::ClearVehicle()
   {
-  DoClearVehicle(true, true);
+  DoClearVehicle(true, true, true);
   }
-void OvmsVehicleFactory::DoClearVehicle( bool clearName, bool sendEvent)
+
+void OvmsVehicleFactory::DoClearVehicle( bool clearName, bool sendEvent, bool wait)
   {
   if (m_currentvehicle)
     {
@@ -180,19 +228,36 @@ void OvmsVehicleFactory::DoClearVehicle( bool clearName, bool sendEvent)
     auto vehicle = m_currentvehicle;
     m_currentvehicle = NULL;
 
+    if (wait)
+      {
+      int repeat = 20; // 1s
+      while (!vehicle->IsShutdown() && repeat--)
+        vTaskDelay(pdMS_TO_TICKS(50));
+      }
+
     m_currentvehicletype.clear();
     if (clearName)
       StandardMetrics.ms_v_type->SetValue("");
     if (sendEvent)
       MyEvents.SignalEvent("vehicle.type.cleared", NULL);
 
-    delete vehicle;
+    if (vehicle->IsShutdown())
+      delete vehicle;
+    else
+      {
+      if (m_pending_shutdown.empty())
+        {
+        MyEvents.DeregisterEvent(CHECK_SHUTDOWN_TAG);
+        MyEvents.RegisterEvent(CHECK_SHUTDOWN_TAG,"ticker.1",std::bind(&OvmsVehicleFactory::EventTicker1ShuttingDown, this, _1, _2));
+        }
+      m_pending_shutdown.push_back(vehicle);
+      }
     }
   }
 
 void OvmsVehicleFactory::SetVehicle(const char* type)
   {
-  DoClearVehicle(false, true);
+  DoClearVehicle(false, true, true);
   m_currentvehicle = NewVehicle(type);
   if (m_currentvehicle)
     {
@@ -240,8 +305,6 @@ const char* OvmsVehicleFactory::ActiveVehicleShortName()
   return m_currentvehicle ? m_currentvehicle->VehicleShortName() : "";
   }
 
-static const char *PollerRegister="Vehicle Listener";
-
 OvmsVehicle::OvmsVehicle()
   {
 
@@ -260,6 +323,7 @@ OvmsVehicle::OvmsVehicle()
   m_drive_startsoc = StdMetrics.ms_v_bat_soc->AsFloat();
   m_drive_startrange = StdMetrics.ms_v_bat_range_est->AsFloat();
   m_drive_startaltitude = StdMetrics.ms_v_pos_altitude->AsFloat();
+  time(&m_drive_starttime);
   m_drive_speedcnt = 0;
   m_drive_speedsum = 0;
   m_drive_accelcnt = 0;
@@ -366,12 +430,29 @@ OvmsVehicle::OvmsVehicle()
   VehicleConfigChanged("config.mounted", NULL);
 
   MyMetrics.RegisterListener(TAG, "*", std::bind(&OvmsVehicle::MetricModified, this, _1));
-  MyCan.RegisterCallback(PollerRegister, std::bind(&OvmsVehicle::IncomingPollRxFrame, this, _1, _2));
+
+#ifdef CONFIG_OVMS_COMP_POLLER
+
+  MyPollers.RegisterFrameRx(TAG, std::bind(&OvmsVehicle::IncomingRxFrame, this, _1));
+#else
+
+  m_vqueue = xQueueCreate(CONFIG_OVMS_VEHICLE_CAN_RX_QUEUE_SIZE,sizeof(CAN_frame_t));
+  xTaskCreatePinnedToCore(OvmsVehicleTask, "OVMS Vehicle Poll",
+      CONFIG_OVMS_VEHICLE_RXTASK_STACK, (void*)this, 10, &m_vtask, CORE(1));
+  MyCan.RegisterListener(m_vqueue);
+#endif
   }
 
 OvmsVehicle::~OvmsVehicle()
   {
-  ShuttingDown();
+#ifndef CONFIG_OVMS_COMP_POLLER
+  auto vtask = Atomic_GetAndNull(m_vtask);
+  if (vtask)
+    vTaskDelete(vtask);
+
+  vQueueDelete(m_vqueue);
+  m_vqueue = nullptr;
+#endif
 
   if (m_bms_voltages != NULL)
     {
@@ -444,18 +525,37 @@ void OvmsVehicle::ShuttingDown()
   MyPollers.ShuttingDownVehicle();
   MyPollers.DeregisterRunFinished(TAG);
   MyPollers.DeregisterPollStateTicker(TAG);
+  MyPollers.DeregisterFrameRx(TAG);
 
   if (m_pollsignal)
     delete m_pollsignal;
 #else
+  MyCan.DeregisterListener(m_vqueue);
+  CAN_frame_t entry;
+  entry.origin = nullptr;
+  entry.callback = nullptr;
+  entry.MsgID = 0;
+  xQueueSendToFront(m_vqueue, &entry, 0);
+
   if (m_can1) m_can1->SetPowerMode(Off);
   if (m_can2) m_can2->SetPowerMode(Off);
   if (m_can3) m_can3->SetPowerMode(Off);
   if (m_can4) m_can4->SetPowerMode(Off);
+
 #endif
   MyEvents.DeregisterEvent(TAG);
   MyMetrics.DeregisterListener(TAG);
-  MyCan.DeregisterCallback(PollerRegister);
+  }
+bool OvmsVehicle::IsShutdown()
+  {
+  if (!m_is_shutdown)
+    return false;
+#ifndef CONFIG_OVMS_COMP_POLLER
+  if (Atomic_Get(m_vqueue) != nullptr) {
+    return false;
+  }
+#endif
+  return true;
   }
 
 const char* OvmsVehicle::VehicleShortName()
@@ -520,11 +620,6 @@ void OvmsVehicle::OvmsVehicleSignal::IncomingPollTxCallback(const OvmsPoller::po
     m_parent->IncomingPollTxCallback(job, success);
   }
 
-void OvmsVehicle::OvmsVehicleSignal::IncomingPollRxFrame(canbus* bus, CAN_frame_t *frame, bool success)
-  {
-  if (Ready())
-    m_parent->IncomingPollRxFrame(frame, success);
-  }
 bool OvmsVehicle::OvmsVehicleSignal::Ready()
   {
   return m_parent->m_ready;
@@ -1403,6 +1498,10 @@ OvmsVehicle::vehicle_command_t OvmsVehicle::CommandStatTrip(int verbosity, OvmsW
   float range_diff = range - m_drive_startrange;
   float alt = StdMetrics.ms_v_pos_altitude->AsFloat();
   float alt_diff = UnitConvert(Meters, altitudeUnit, alt - m_drive_startaltitude);
+  uint32_t duration = time(NULL) - m_drive_starttime;
+  uint8_t duration_h = duration / 3600;
+  uint8_t duration_min = duration % 3600 / 60;
+  uint8_t duration_sec = duration % 3600 % 60;
 
   std::ostringstream buf;
   buf
@@ -1410,8 +1509,24 @@ OvmsVehicle::vehicle_command_t OvmsVehicle::CommandStatTrip(int verbosity, OvmsW
     << std::fixed
     << std::setprecision(1)
     << UnitConvert(Kilometers, rangeUnit, trip_length) << rangeUnitLabel
-    << " Avg "
     << std::setprecision(0)
+    << " ("
+    ;
+  if (duration_h > 0) 
+    {
+    buf
+      << +duration_h
+      << ":"
+      << std::setw(2) << std::setfill('0')
+      ;
+    }
+  buf
+    << +duration_min
+    << ":"
+    << std::setw(2) << std::setfill('0') << +duration_sec
+    << std::setfill(' ')
+    << ") "
+    << " Avg "
     << speed_avg << speedUnitLabel
     << " Alt "
     << ((alt_diff >= 0) ? "+" : "")
@@ -1419,10 +1534,23 @@ OvmsVehicle::vehicle_command_t OvmsVehicle::CommandStatTrip(int verbosity, OvmsW
     ;
   if (wh_per_km != 0)
     {
+    buf << "\nEnergy ";
+    if (consumUnit == KPkWh || consumUnit == MPkWh) 
+    {
+      buf << std::setprecision(2);
+    } 
+    else if (consumUnit == kWhP100K) 
+    {
+      buf << std::setprecision(1);
+    }
+    else
+    {
+      buf << std::setprecision(0);
+    }
     buf
-      << "\nEnergy "
       << UnitConvert(WattHoursPK, consumUnit, wh_per_km) << consumUnitLabel
       << ", "
+      << std::setprecision(0)
       << energy_recd_perc << "% recd"
       ;
     }
@@ -1511,6 +1639,7 @@ void OvmsVehicle::MetricModified(OvmsMetric* metric)
       m_drive_startsoc = StdMetrics.ms_v_bat_soc->AsFloat();
       m_drive_startrange = StdMetrics.ms_v_bat_range_est->AsFloat();
       m_drive_startaltitude = StdMetrics.ms_v_pos_altitude->AsFloat();
+      time(&m_drive_starttime);
       m_drive_speedcnt = 0;
       m_drive_speedsum = 0;
       m_drive_accelcnt = 0;
@@ -2420,9 +2549,40 @@ void OvmsVehicle::IncomingPollError(const OvmsPoller::poll_job_t &job, uint16_t 
 void OvmsVehicle::IncomingPollTxCallback(const OvmsPoller::poll_job_t &job, bool success)
   {
   }
+
 #endif
 
-void OvmsVehicle::IncomingPollRxFrame(const CAN_frame_t *frame, bool success)
+#ifdef CONFIG_OVMS_COMP_POLLER
+void OvmsVehicle::IncomingRxFrame(const CAN_frame_t &frame)
+  {
+  SendIncomingFrame(&frame);
+  }
+#else
+void OvmsVehicle::OvmsVehicleTask(void *pvParameters)
+  {
+  OvmsVehicle *me = (OvmsVehicle*)pvParameters;
+  me->VehicleTask();
+  }
+
+void OvmsVehicle::VehicleTask()
+  {
+
+  CAN_frame_t entry;
+  while (!m_is_shutdown)
+    {
+    if (xQueueReceive(m_vqueue, &entry, (portTickType)portMAX_DELAY)!=pdTRUE)
+      continue;
+    if (entry.origin != nullptr )
+      SendIncomingFrame(&entry);
+    }
+  auto vtask = Atomic_GetAndNull(m_vtask);
+  if (vtask)
+    vTaskDelete(vtask);
+  vTaskSuspend(nullptr);
+  }
+#endif
+
+void OvmsVehicle::SendIncomingFrame(const CAN_frame_t *frame)
   {
   if (!m_ready)
     return;

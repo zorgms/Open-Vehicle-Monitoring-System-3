@@ -95,6 +95,7 @@ static void OvmsServerV3MongooseCallback(struct mg_connection *nc, int ev, void 
           StandardMetrics.ms_s_v3_peers->SetValue(0);
           MyOvmsServerV3->SetStatus("Error: Connection failed", true, OvmsServerV3::WaitReconnect);
           MyOvmsServerV3->m_connretry = 60;
+          MyOvmsServerV3->m_connection_counter = 0;
           }
         }
       }
@@ -108,6 +109,7 @@ static void OvmsServerV3MongooseCallback(struct mg_connection *nc, int ev, void 
           {
           MyOvmsServerV3->Disconnect();
           MyOvmsServerV3->m_connretry = 60;
+          MyOvmsServerV3->m_connection_counter = 0;
           }
         }
       else
@@ -173,6 +175,7 @@ static void OvmsServerV3MongooseCallback(struct mg_connection *nc, int ev, void 
         {
         MyOvmsServerV3->Disconnect();
         MyOvmsServerV3->m_connretry = 60;
+        MyOvmsServerV3->m_connection_counter = 0;
         }
       break;
     default:
@@ -191,6 +194,7 @@ OvmsServerV3::OvmsServerV3(const char* name)
 
   SetStatus("Server has been started", false, WaitNetwork);
   m_connretry = 0;
+  m_connection_counter = 0;
   m_mgconn = NULL;
   m_sendall = false;
   m_lasttx = 0;
@@ -210,6 +214,7 @@ OvmsServerV3::OvmsServerV3(const char* name)
   m_notify_data_waitcomp = 0;
   m_notify_data_waittype = NULL;
   m_notify_data_waitentry = NULL;
+  m_connection_available = false;
 
   ESP_LOGI(TAG, "OVMS Server v3 running");
 
@@ -296,36 +301,29 @@ void OvmsServerV3::TransmitModifiedMetrics()
 
 void OvmsServerV3::TransmitMetric(OvmsMetric* metric)
   {
-  auto const metric_name = metric->m_name;
+  std::string metric_name(metric->m_name);
 
   if (!m_metrics_filter.CheckFilter(metric_name))
     return;
 
   std::string topic(m_topic_prefix);
   topic.append("metric/");
-  topic.append(metric_name);
-
-  // Replace '.' inside the metric name by '/' for MQTT like namespacing.
-  for(size_t i = m_topic_prefix.length(); i < topic.length(); i++)
-    {
-      if(topic[i] == '.')
-        topic[i] = '/';
-    }
+  topic.append(mqtt_topic(metric_name));
 
   std::string val = metric->AsString();
 
   mg_mqtt_publish(m_mgconn, topic.c_str(), m_msgid++,
     MG_MQTT_QOS(0) | MG_MQTT_RETAIN, val.c_str(), val.length());
-  ESP_LOGI(TAG,"Tx metric %s=%s",topic.c_str(),val.c_str());
+  ESP_LOGD(TAG,"Tx metric %s=%s",topic.c_str(),val.c_str());
   }
 
 int OvmsServerV3::TransmitNotificationInfo(OvmsNotifyEntry* entry)
   {
   std::string topic(m_topic_prefix);
   topic.append("notify/info/");
-  topic.append(entry->m_subtype);
+  topic.append(mqtt_topic(entry->m_subtype));
 
-  const extram::string result = mp_encode(entry->GetValue());
+  const extram::string result = entry->GetValue();
 
   int id = m_msgid++;
   mg_mqtt_publish(m_mgconn, topic.c_str(), id,
@@ -338,9 +336,9 @@ int OvmsServerV3::TransmitNotificationError(OvmsNotifyEntry* entry)
   {
   std::string topic(m_topic_prefix);
   topic.append("notify/error/");
-  topic.append(entry->m_subtype);
+  topic.append(mqtt_topic(entry->m_subtype));
 
-  const extram::string result = mp_encode(entry->GetValue());
+  const extram::string result = entry->GetValue();
 
   int id = m_msgid++;
   mg_mqtt_publish(m_mgconn, topic.c_str(), id,
@@ -353,9 +351,9 @@ int OvmsServerV3::TransmitNotificationAlert(OvmsNotifyEntry* entry)
   {
   std::string topic(m_topic_prefix);
   topic.append("notify/alert/");
-  topic.append(entry->m_subtype);
+  topic.append(mqtt_topic(entry->m_subtype));
 
-  const extram::string result = mp_encode(entry->GetValue());
+  const extram::string result = entry->GetValue();
 
   int id = m_msgid++;
   mg_mqtt_publish(m_mgconn, topic.c_str(), id,
@@ -369,7 +367,7 @@ int OvmsServerV3::TransmitNotificationData(OvmsNotifyEntry* entry)
   char base[32];
   std::string topic(m_topic_prefix);
   topic.append("notify/data/");
-  topic.append(entry->m_subtype);
+  topic.append(mqtt_topic(entry->m_subtype));
   topic.append("/");
   topic.append(itoa(entry->m_id,base,10));
   topic.append("/");
@@ -536,11 +534,19 @@ void OvmsServerV3::IncomingEvent(std::string event, void* data)
   if (!StandardMetrics.ms_s_v3_connected->AsBool()) return;
 
   std::string topic(m_topic_prefix);
-  topic.append("event");
 
-  ESP_LOGI(TAG,"Tx event %s",event.c_str());
+  // Legacy: publish event name on fixed topic
+  topic.append("event");
   mg_mqtt_publish(m_mgconn, topic.c_str(), m_msgid++,
     MG_MQTT_QOS(0), event.c_str(), event.length());
+
+  // Publish MQTT style event topic, payload reserved for event data serialization:
+  topic.append("/");
+  topic.append(mqtt_topic(event));
+  mg_mqtt_publish(m_mgconn, topic.c_str(), m_msgid++,
+    MG_MQTT_QOS(0), "", 0);
+
+  ESP_LOGD(TAG,"Tx event %s",event.c_str());
   }
 
 void OvmsServerV3::RunCommand(std::string client, std::string id, std::string command)
@@ -624,6 +630,13 @@ void OvmsServerV3::CountClients()
 
 void OvmsServerV3::Connect()
   {
+  if (!m_connection_available)
+    {
+    ESP_LOGE(TAG, "No connection available, waiting for network");
+    m_connretry = 10;
+    m_connection_counter = 0;
+    return;
+    }
   m_msgid = 1;
   m_vehicleid = MyConfig.GetParamValue("vehicle", "id");
   m_server = MyConfig.GetParamValue("server.v3", "server");
@@ -673,6 +686,7 @@ void OvmsServerV3::Connect()
     {
     SetStatus("Error: Parameter server.v3/server must be defined", true, WaitReconnect);
     m_connretry = 20; // Try again in 20 seconds...
+    m_connection_counter = 0;
     return;
     }
 
@@ -698,6 +712,7 @@ void OvmsServerV3::Connect()
     {
     ESP_LOGE(TAG, "mg_connect(%s) failed: %s", address.c_str(), err);
     m_connretry = 20; // Try again in 20 seconds...
+    m_connection_counter = 0;
     return;
     }
   return;
@@ -854,6 +869,7 @@ void OvmsServerV3::NetReconfigured(std::string event, void* data)
   ESP_LOGI(TAG, "Network was reconfigured: disconnect, and reconnect in 10 seconds");
   Disconnect();
   m_connretry = 10;
+  m_connection_counter = 0;
   }
 
 void OvmsServerV3::NetmanInit(std::string event, void* data)
@@ -876,17 +892,35 @@ void OvmsServerV3::NetmanStop(std::string event, void* data)
 
 void OvmsServerV3::Ticker1(std::string event, void* data)
   {
+  m_connection_available = StdMetrics.ms_m_net_connected->AsBool() &&
+                              StdMetrics.ms_m_net_ip->AsBool() &&
+                              StdMetrics.ms_m_net_good_sq->AsBool();
+  if (!m_connection_available && m_mgconn)
+    {
+    Disconnect();
+    m_connretry = 10;
+    }
+  
+  if (!m_connection_available) m_connection_counter = 0;
+  else if (m_connection_counter < 10) 
+    {
+    m_connection_counter++;
+    if (m_connretry == 0 && m_connection_counter == 10)
+      {
+      if (m_mgconn) Disconnect(); // Disconnect first (timeout)
+      Connect();      // Kick off the connection
+      return;
+      }
+    } 
+
   if (m_connretry > 0)
     {
-    if (MyNetManager.m_connected_any)
+    m_connretry--;
+    if (m_connretry == 0 && m_connection_counter == 10)
       {
-      m_connretry--;
-      if (m_connretry == 0)
-        {
-        if (m_mgconn) Disconnect(); // Disconnect first (timeout)
-        Connect(); // Kick off the connection
-        return;
-        }
+      if (m_mgconn) Disconnect(); // Disconnect first (timeout)
+      Connect(); // Kick off the connection
+      return;
       }
     }
 

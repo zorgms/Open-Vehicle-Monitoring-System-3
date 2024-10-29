@@ -57,7 +57,7 @@ void OvmsPoller::PollerISOTPStart(bool fromTicker)
     m_poll.moduleid_high = 0x7ef;
     }
 
-  ESP_LOGD(TAG, "[%" PRIu8 "]PollerISOTPStart(%s): send [bus=%" PRIu8 ", type=%02" PRIX16 ", pid=%X], expecting %03x/%03x-%03x",
+  ESP_LOGD(TAG, "[%" PRIu8 "]PollerISOTPStart(%s): send [bus=%" PRIu8 ", type=%02" PRIX16 ", pid=%X], expecting %03" PRIx32 "/%03" PRIx32 "-%03" PRIx32 "",
            m_poll.bus_no, fromTicker ? "Yes" : "No",
            m_poll.entry.pollbus, m_poll.type, m_poll.pid, m_poll.moduleid_sent,
            m_poll.moduleid_low, m_poll.moduleid_high);
@@ -544,16 +544,13 @@ bool OvmsPoller::PollerISOTPReceive(CAN_frame_t* frame, uint32_t msgid)
     m_poll_wait = 0;
     }
 
-
-  // Immediately send the next poll for this tick if…
-  // - we are not waiting for another frame
-  // - the poll was no broadcast (with potential further responses from other devices)
-  // - poll throttling is unlimited or limit isn't reached yet
-  if (m_poll_wait == 0 &&
-      m_poll.moduleid_sent != 0x7df &&
-      CanPoll() )
+  //  If there are no more packets and
+  //  If the poll was not a broadcast
+  //  (with potential further responses from other devices)
+  if (m_poll.mlremain == 0 && m_poll.moduleid_sent != 0x7df )
     {
-    Queue_PollerSendSuccess();
+    // Succeeded - No more expected so check to send the next poll
+    PollerSucceededPollNext();
     }
 
   return true;
