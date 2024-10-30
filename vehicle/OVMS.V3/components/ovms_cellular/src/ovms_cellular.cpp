@@ -287,7 +287,7 @@ modem::modem(const char* name, uart_port_t uartnum, int baud, int rxpin, int txp
   m_state1_timeout_goto = None;
   m_state1_timeout_ticks = -1;
   m_state1_userdata = 0;
-  m_state1_netloss_ticker = 2;
+  m_state1_netloss_ticker = 5;
   m_line_unfinished = -1;
   m_line_buffer.clear();
   m_netreg = Unknown;
@@ -959,7 +959,7 @@ modem::modem_state1_t modem::State1Ticker1()
         ESP_LOGW(TAG, "Lost network connection (+PPP disconnect in NetMode)");
         if (--m_state1_netloss_ticker == 0)
           {
-          m_state1_netloss_ticker = 2;
+          m_state1_netloss_ticker = 5;
           ESP_LOGW(TAG, "Lost network connection (+PPP disconnect in NetMode), performing modem power cycle");
           return PowerOffOn;
           }
