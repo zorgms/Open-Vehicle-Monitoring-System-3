@@ -140,14 +140,6 @@ OvmsVehicleSmartEQ::OvmsVehicleSmartEQ() {
   
   // standard settings
   StdMetrics.ms_v_bat_cac->SetValue(42);
-  StandardMetrics.ms_v_tpms_pressure->SetElemValue(MS_V_TPMS_IDX_RL, (float) 240);
-  StandardMetrics.ms_v_tpms_pressure->SetElemValue(MS_V_TPMS_IDX_RR, (float) 240);
-  StandardMetrics.ms_v_tpms_pressure->SetElemValue(MS_V_TPMS_IDX_FL, (float) 210);
-  StandardMetrics.ms_v_tpms_pressure->SetElemValue(MS_V_TPMS_IDX_FR, (float) 210);
-  StandardMetrics.ms_v_tpms_temp->SetElemValue(MS_V_TPMS_IDX_RL, (float) 1.1);
-  StandardMetrics.ms_v_tpms_temp->SetElemValue(MS_V_TPMS_IDX_RR, (float) 1.1);
-  StandardMetrics.ms_v_tpms_temp->SetElemValue(MS_V_TPMS_IDX_FL, (float) 1.1);
-  StandardMetrics.ms_v_tpms_temp->SetElemValue(MS_V_TPMS_IDX_FR, (float) 1.1);
 
   RegisterCanBus(1, CAN_MODE_ACTIVE, CAN_SPEED_500KBPS);
 
@@ -292,8 +284,7 @@ void OvmsVehicleSmartEQ::IncomingFrameCan1(CAN_frame_t* p_frame) {
       break;
     case 0x646:
       mt_use_at_reset->SetValue(CAN_BYTE(1) * 0.1);
-      StandardMetrics.ms_v_inv_temp->SetValue(mt_use_at_reset->AsFloat()); // not the best idea at the moment
-      StandardMetrics.ms_v_charge_kwh_grid->SetValue(mt_use_at_reset->AsFloat()); // not the best idea at the moment
+      StandardMetrics.ms_v_charge_kwh_grid_total->SetValue(mt_use_at_reset->AsFloat()); // not the best idea at the moment
       break;
     case 0x654: // SOC(b)
       StandardMetrics.ms_v_bat_soc->SetValue(CAN_BYTE(3));
